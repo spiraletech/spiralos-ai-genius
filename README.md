@@ -2,23 +2,22 @@
 
 Native, sovereign C++ intelligence infrastructure for SpiralOS, Hakui, EtherPlay, and future EtherTech systems.
 
-## Current rung: L19 — Spiral Units unified runtime
+## Current rung: L20 — renderer + device bridge
 
-L0–L18 established Spiral-owned language, agents, multimodal generation, temporal learning, media decoders, prompt-conditioned media flow, and accelerated CPU execution. L19 adds the live application/world representation that lets those subsystems operate through one common runtime instead of remaining isolated libraries:
+L0–L19 established Spiral-owned language, agents, multimodal generation, temporal media models, accelerated CPU execution, and the live Spiral Unit graph. L20 gives that live graph a deterministic screen/device contract without hardcoding one client renderer:
 
-- `units::SpiralUnit`: deterministic component/state document with stable component IDs, explicit roots/children, layout constraints, properties, media surfaces, and event bindings.
-- `ComponentKind`: container/text/button plus image, audio, video, waveform, canvas, grid, avatar, and custom runtime nodes.
-- strict structural validation: unique IDs, valid roots/children, finite layout values, reachability, duplicate-child rejection, and cycle detection.
-- `UnitPatch`: revision-checked hot patch operations for components, roots, state, and properties.
-- copy → patch → validate → commit semantics: stale or structurally invalid patches cannot partially corrupt the live unit.
-- event actions: set state, set another component property, invoke `ToolRegistry`, invoke `AgentEngine`, and emit application events.
-- `$payload` and `$state.<key>` value resolution for event-driven live data flow.
-- `UnitRuntime::matmul`: compute-bound execution through L18 `ComputeBackend`, with the original Tensor path as a portable fallback.
-- `UnitGenerator`: pluggable prompt → `SpiralUnit` generation boundary; generated units must pass the same native validator before becoming live.
-- explicit image/audio/video/waveform surface kinds establish the renderer/media integration contract without pretending Hakui or EtherPlay rendering code already lives in this repository.
-- `spiral_units_tests`: proves live state/property mutation, tool and agent execution, emitted events, compute routing, hot patching, stale patch rejection, invalid-patch rollback, prompt-generated unit loading, media surface identity, and graph-cycle rejection.
+- `render::LayoutEngine`: resolves validated Spiral Units into concrete clipped frame trees.
+- deterministic vertical flex layout plus `Grid` layout through a `columns` property; absolute children remain parent-relative and min/max constraints are honored.
+- `FrameTree::hit_test`: back-to-front interactive hit testing against resolved bounds and inherited clip rectangles.
+- `UnitRenderer`: host-neutral begin/draw/end rendering interface receiving the resolved frame tree, dirty regions, and optional native device binding.
+- `RendererBridge`: mounts a `UnitRuntime`, dispatches pointer events, recomputes layout, tracks dirty geometry/property changes, applies revisioned hot patches, resizes, and performs full redraws.
+- `HostSurfaceAdapter`: named adapter hook used by clients such as EtherPlay and Hakui to claim media/runtime component kinds without forking Spiral Units.
+- `device::Device`: native hardware-neutral buffer/upload/download/submit contract.
+- `device::CpuReferenceDevice`: real buffer storage plus validated fill/copy command execution used as the reference contract for later GPU implementations.
+- `device::CommandList` / `CommandQueue`: explicit queued device work with submission accounting.
+- `spiral_renderer_device_tests`: proves device buffer commands and bounds safety, deterministic grid/flex layout, hit testing, EtherPlay/Hakui adapter dispatch, event-driven dirty redraw, hot-layout propagation, stale/corrupt patch safety, resize/redraw, and renderer access to the native device.
 
-L19 is the convergence/runtime-schema rung, not a finished visual renderer. It gives Hakui, EtherPlay, and future SpiralOS clients one stable executable document and event model to render and control. The next integration work can bind these nodes to SDL/Hakui widgets, EtherPlay audio/video surfaces, or a future GPU renderer without changing the AI/agent/unit contract.
+L20 deliberately does **not** claim a GPU kernel yet. The device/buffer/queue API and CPU reference implementation define the semantics that a later Direct3D/Vulkan/Metal-style Spiral backend must match. Likewise, the renderer is host-neutral: Hakui/SDL and EtherPlay native clients can now bind concrete drawing/media behavior without changing the Unit/agent/model layers.
 
 No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, FFmpeg, libsndfile, Stable Diffusion/diffusion wrapper, pretrained-model runtime, vector database, external agent framework, hosted-model API, BLAS library, or external thread-pool runtime is required.
 
@@ -61,7 +60,7 @@ images/image_0002.ppm<TAB>a blue signal in fog
 - L17 ✅ learned prompt-temporal conditioning + sequence denoising + temporal consistency + prompt→PCM + prompt→RGB + media-flow checkpoints
 - L18 ✅ native thread pool + aligned arena + SSE2/scalar kernels + parallel FP32 matmul + native INT8 matmul + compute backend + benchmark harness
 - L19 ✅ Spiral Unit graph + constraints + state + events + tool/agent actions + revisioned hot patching + media surfaces + compute routing + prompt-generation boundary
-- L20 ⬜ renderer bridges + native GPU device/buffer/queue contract + first GPU kernels
-- L21 ⬜ full Hakui/EtherPlay/SpiralOS live Unit host + visual self-test/repair loop
+- L20 ✅ deterministic layout + frame tree + hit testing + dirty redraw + host adapters + native device/buffer/command queue reference
+- L21 ⬜ concrete Hakui/EtherPlay host renderer + visual self-test/repair + first native GPU backend
 
 The rule is simple: external systems may be studied and benchmarked, but Spiral owns its core abstractions and can replace any optional dependency.
