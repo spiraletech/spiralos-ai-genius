@@ -1,9 +1,11 @@
 cmake_minimum_required(VERSION 3.24)
-project(spiralos_ai_genius VERSION 0.0.18 LANGUAGES CXX)
+project(spiralos_ai_genius VERSION 0.0.19 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+find_package(Threads REQUIRED)
 
 add_library(spiral_core STATIC
     src/tensor.cpp
@@ -35,10 +37,12 @@ add_library(spiral_core STATIC
     src/temporal_generation.cpp
     src/media_generation.cpp
     src/media_flow.cpp
+    src/compute.cpp
 )
 
 target_include_directories(spiral_core PUBLIC include)
 target_compile_features(spiral_core PUBLIC cxx_std_20)
+target_link_libraries(spiral_core PUBLIC Threads::Threads)
 
 if(MSVC)
     target_compile_options(spiral_core PRIVATE /W4 /permissive-)
@@ -122,3 +126,7 @@ add_test(NAME spiral_media_generation_tests COMMAND spiral_media_generation_test
 add_executable(spiral_media_flow_tests tests/media_flow_tests.cpp)
 target_link_libraries(spiral_media_flow_tests PRIVATE spiral_core)
 add_test(NAME spiral_media_flow_tests COMMAND spiral_media_flow_tests)
+
+add_executable(spiral_compute_tests tests/compute_tests.cpp)
+target_link_libraries(spiral_compute_tests PRIVATE spiral_core)
+add_test(NAME spiral_compute_tests COMMAND spiral_compute_tests)
