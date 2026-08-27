@@ -2,24 +2,24 @@
 
 Native, sovereign C++ intelligence infrastructure for SpiralOS, Hakui, EtherPlay, and future EtherTech systems.
 
-## Current rung: L7 — native agent brain
+## Current rung: L8 — native vision foundation
 
-L0 established Spiral-owned tensors and tokenization. L1 added neural layers. L2 added causal attention. L3 assembled the language model. L4 added native training. L5 added decoding. L6 added incremental inference, memory, retrieval, and tools. L7 turns those capabilities into an explicit execution architecture:
+L0 established Spiral-owned tensors/tokenization, L1–L5 built the language model, training, and generation stack, L6 added runtime memory/tools, and L7 added native orchestration. L8 gives Spiral its first owned visual representation and image-generation substrate:
 
-- `IntentParser`: deterministic intent classification plus discovery of candidate native tools from the current registry.
-- `TaskGraph`: dependency-aware task nodes with duplicate-ID, unknown-dependency, self-dependency, and cycle validation.
-- `AgentContext`: injects the current goal, parsed intent, retrieved persistent memories, and available tool descriptions into planning policy.
-- `AgentEngine`: plan → execute → critique → repair/retry → verify → remember loop with bounded attempts per task.
-- planner, critic, and repair policies are injectable native interfaces. Deterministic fallback policies work today; future Spiral language models can occupy these policy slots without replacing the orchestration engine.
-- dependency failures skip downstream tasks rather than executing invalid work.
-- successful tool calls can still be rejected by the critic, forcing a repaired attempt rather than treating API success as semantic success.
-- `TraceEvent`: ordered intent, memory, planning, execution, critic, repair, skip, verification, and outcome-memory events for every run.
-- successful and failed agent outcomes can be written back into `MemoryStore` as episodic records for later retrieval/evaluation.
-- `spiral_agent_tests`: validates memory injection, deterministic tool planning, multi-step output chaining, critic-triggered repair, retry accounting, outcome memory, task-cycle rejection, and graceful no-action failure.
+- `RgbImage`: owned RGB8 image storage with checked dimensions, pixel access, and native binary P6 PPM load/save without OpenCV, PIL, or another image runtime.
+- `image_to_tensor` / `tensor_to_image`: deterministic RGB8 ↔ normalized `[height,width,3]` SpiralTensor conversion.
+- `patchify`: native image-to-patch tokenization for vision-transformer inputs.
+- deterministic 2D sine/cosine positional encoding across image patch grids.
+- `VisionSelfAttention`: Spiral-owned bidirectional multi-head self-attention so every image patch can attend to every other patch rather than inheriting the language model's causal mask.
+- `VisionBlock`: pre-norm bidirectional attention + residual + gated feed-forward + residual.
+- `VisionEncoder`: patch projection, configurable vision-block stack, final normalization, per-patch visual embeddings, and pooled image embeddings.
+- `CrossModalProjector`: independent text and vision projections into a shared feature space for later multimodal alignment/training.
+- `LatentRasterDecoder`: trainable Spiral-owned latent-grid → RGB patch decoder plus deterministic Gaussian latent sampling; this is the first native image-generation substrate, not yet a trained text-to-image model.
+- `spiral_vision_tests`: validates PPM round-trip, tensor conversion, patch ordering, deterministic vision weights, bidirectional patch influence, pooled embeddings, cross-modal projection, deterministic latent sampling, and latent-to-RGB reconstruction.
 
-L7 does not claim that the current tiny/random model is already a capable planner. Instead, it establishes the owned agent architecture and explicit policy boundaries required to plug trained Spiral models into planning and criticism later without turning the runtime into a model-specific wrapper.
+L8 deliberately distinguishes infrastructure from capability: the vision encoder and latent decoder are real native neural components, but their random initial weights do not yet constitute a useful trained image model. Future rungs can train/align them without replacing the owned runtime.
 
-No llama.cpp, PyTorch, TensorFlow, external agent framework, vector database, pretrained-model runtime, or hosted-model API is required.
+No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, diffusion wrapper, pretrained-model runtime, vector database, external agent framework, or hosted-model API is required.
 
 ## Build
 
@@ -39,8 +39,8 @@ ctest --test-dir build -C Release --output-on-failure
 - L5 ✅ temperature/top-k/top-p + repetition control + bounded context + streaming native generation
 - L6 ✅ per-layer KV cache + incremental inference + model bundles + persistent memory + retrieval + native tool registry
 - L7 ✅ intent + task graph + memory injection + tool execution + critic + repair/retry + verification + traces + outcome memory
-- L8 ⬜ vision + image generation
-- L9 ⬜ video/audio + Spiral Units
+- L8 ✅ native RGB images + patches + bidirectional vision transformer + cross-modal projection + latent raster decoder
+- L9 ⬜ multimodal training + image generation + video/audio + Spiral Units
 - L10 ⬜ integrated Spiral intelligence
 
 The rule is simple: external systems may be studied and benchmarked, but Spiral owns its core abstractions and can replace any optional dependency.
