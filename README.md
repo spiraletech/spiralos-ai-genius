@@ -2,22 +2,23 @@
 
 Native, sovereign C++ intelligence infrastructure for SpiralOS, Hakui, EtherPlay, and future EtherTech systems.
 
-## Current rung: L15 — causal temporal learning + latent generation
+## Current rung: L16 — generative media decoders
 
-L0–L14 established Spiral-owned language, training, agents, vision, image generation, scalable datasets, audio latents, FFT/STFT DSP, and a shared bidirectional temporal encoder. L15 adds the first trainable autoregressive time model and generation adapters:
+L0–L15 established Spiral-owned language, training, agents, vision, image generation, scalable datasets, audio latents, FFT/STFT DSP, shared temporal understanding, and causal next-latent generation. L16 closes the most important media gap: predicted future latents can now be decoded into actual PCM audio and RGB frames through Spiral-owned trainable decoders.
 
-- `temporal_generation::CausalTemporalAttention`: strict causal multi-head self-attention; token `t` can only attend to positions `<= t`.
-- `CausalTemporalPredictor`: ordered features → projection + temporal positions → causal attention/FFN residual blocks → next-latent predictions.
-- explicit reverse-mode gradients through Q/K/V, masked softmax, value mixing, output projection, residuals, and SiLU feed-forward layers.
-- `TemporalNextLatentTrainer`: next-step MSE training with native Spiral AdamW and gradient clipping.
-- bounded autoregressive context plus deterministic multi-step latent generation.
-- native predictor checkpoint save/load with architecture validation and exact weight restoration.
-- `magnitude_to_audio_zero_phase`: inverse FFT + Hann overlap-add reference reconstruction from generated magnitude spectra.
-- `AudioLatentGenerator`: PCM seed → FFT/STFT → spectral patches → AudioLatentCodec → causal latent continuation → decoder → PCM synthesis.
-- `VideoEmbeddingGenerator`: ordered RGB frames → VisionEncoder embeddings → causal next-frame embedding prediction and multi-step latent continuation.
-- `spiral_temporal_generation_tests`: validates exact future-token isolation, real next-latent loss reduction, deterministic autoregression, exact checkpoint output restoration, inverse-spectrum PCM synthesis, audio latent continuation, and video embedding continuation.
+- `media_generation::complex_stft`: native complex-valued STFT represented as `[frames,bins,2]` real/imaginary tensors, preserving phase instead of discarding it.
+- `inverse_complex_stft`: Hermitian reconstruction + inverse FFT + Hann overlap-add back to PCM audio.
+- `complex_spectral_patches` / `complex_patches_to_spectrum`: reversible patch representation for temporal audio learning.
+- `ComplexAudioCodec`: trainable real+imaginary spectral-patch encoder/decoder.
+- `ComplexAudioCodecTrainer`: explicit reconstruction MSE backprop through both codec Linear layers with Spiral AdamW.
+- `FrameEmbeddingDecoder`: trainable VisionEncoder pooled embedding → hidden SiLU → sigmoid RGB raster decoder.
+- `FrameDecoderTrainer`: trains frame reconstruction while keeping the vision encoder frozen.
+- `AudioMediaGenerator`: PCM seed → complex STFT → complex audio latents → causal temporal continuation → complex decoder → inverse STFT → PCM output.
+- `VideoMediaGenerator`: RGB seed frames → VisionEncoder embeddings → causal temporal continuation → frame decoder → generated RGB frames.
+- deterministic `prompt_media_bias` / `apply_prompt_bias` conditioning hooks for steering latent seeds before a learned prompt-temporal conditioner is introduced.
+- `spiral_media_generation_tests`: validates complex spectral round-trip, real audio-codec loss reduction, frame-decoder loss reduction, temporal audio latent continuation into PCM, temporal frame continuation into RGB, and deterministic prompt steering.
 
-L14 remains the bidirectional "understand the whole sequence" path. L15 is deliberately separate and causal because generation has a different contract: no future leakage. Video generation at this rung is latent/embedding generation only; Spiral does not claim to decode predicted frame embeddings back into RGB video yet.
+L16 is still a compact CPU reference generator. Audio quality is limited by a tiny linear complex-spectrum codec, and video quality is limited by a tiny embedding-to-raster decoder. The important architectural threshold is now real: Spiral can preserve audio phase, learn media decoders, predict future media latents, and render those latents back into native media without FFmpeg, PyTorch, or a foreign generative runtime.
 
 No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, FFmpeg, libsndfile, Stable Diffusion/diffusion wrapper, pretrained-model runtime, vector database, external agent framework, or hosted-model API is required.
 
@@ -56,6 +57,9 @@ images/image_0002.ppm<TAB>a blue signal in fog
 - L13 ✅ lazy dataset shards/cache + FP16/BF16/int8 foundations + PCM/WAV + STFT + spectral patches + trainable audio latent codec
 - L14 ✅ radix-2 FFT + streaming audio windows + shared temporal transformer + audio temporal encoder + video frame temporal encoder
 - L15 ✅ causal temporal attention + explicit temporal backward + next-latent learning + audio latent synthesis + video embedding generation + temporal checkpoints
-- L16 ⬜ learned phase/audio codec upgrade + frame latent decoder + temporal diffusion/flow + Spiral Units unified multimodal runtime
+- L16 ✅ complex/phase-preserving audio + learned complex codec + frame embedding decoder + temporal audio→PCM + temporal embeddings→RGB
+- L17 ⬜ learned prompt-temporal conditioning + temporal flow/denoising + richer audio neural codec + video latent flow + media checkpoints
+- L18 ⬜ native accelerated compute: SIMD + threading + GPU kernels + serious model scaling
+- L19 ⬜ Spiral Units + unified multimodal runtime
 
 The rule is simple: external systems may be studied and benchmarked, but Spiral owns its core abstractions and can replace any optional dependency.
