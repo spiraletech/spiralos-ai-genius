@@ -2,21 +2,22 @@
 
 Native, sovereign C++ intelligence infrastructure for SpiralOS, Hakui, EtherPlay, and future EtherTech systems.
 
-## Current rung: L14 — shared temporal engine for audio + video
+## Current rung: L15 — causal temporal learning + latent generation
 
-L0–L13 established Spiral-owned language, training, agents, vision, iterative image generation, scale training, streaming datasets, numeric formats, WAV/STFT audio, and a trainable audio latent codec. L14 adds the first shared representation of ordered time across modalities:
+L0–L14 established Spiral-owned language, training, agents, vision, image generation, scalable datasets, audio latents, FFT/STFT DSP, and a shared bidirectional temporal encoder. L15 adds the first trainable autoregressive time model and generation adapters:
 
-- `dsp::fft_inplace`: native iterative radix-2 Cooley–Tukey FFT with inverse support.
-- `dsp::stft_magnitude_fft`: Hann-window FFT STFT that numerically tracks the older transparent O(N²) reference DFT for power-of-two frames.
-- `temporal::AudioWindowCursor`: deterministic overlapping audio windows for long-stream processing.
-- `temporal::TemporalTransformerEncoder`: ordered features → input projection → temporal sinusoidal positions → pre-RMSNorm multi-head self-attention/FFN blocks → output tokens or pooled sequence embedding.
-- depth-scaled residual branches using `1/sqrt(num_layers)`.
-- `temporal::AudioTemporalEncoder`: PCM audio → FFT STFT → spectral patches → trained audio latents → shared temporal transformer.
-- `temporal::VideoFrameSequence`: ordered RGB frames with explicit frame rate.
-- `temporal::VideoTemporalEncoder`: each frame → Spiral VisionEncoder pooled embedding → shared temporal transformer.
-- `spiral_temporal_tests`: validates FFT inverse round-trip, FFT-vs-reference STFT agreement, dominant-frequency detection, streaming-window coverage, deterministic temporal initialization, order sensitivity, audio temporal latents, and video frame-order sensitivity.
+- `temporal_generation::CausalTemporalAttention`: strict causal multi-head self-attention; token `t` can only attend to positions `<= t`.
+- `CausalTemporalPredictor`: ordered features → projection + temporal positions → causal attention/FFN residual blocks → next-latent predictions.
+- explicit reverse-mode gradients through Q/K/V, masked softmax, value mixing, output projection, residuals, and SiLU feed-forward layers.
+- `TemporalNextLatentTrainer`: next-step MSE training with native Spiral AdamW and gradient clipping.
+- bounded autoregressive context plus deterministic multi-step latent generation.
+- native predictor checkpoint save/load with architecture validation and exact weight restoration.
+- `magnitude_to_audio_zero_phase`: inverse FFT + Hann overlap-add reference reconstruction from generated magnitude spectra.
+- `AudioLatentGenerator`: PCM seed → FFT/STFT → spectral patches → AudioLatentCodec → causal latent continuation → decoder → PCM synthesis.
+- `VideoEmbeddingGenerator`: ordered RGB frames → VisionEncoder embeddings → causal next-frame embedding prediction and multi-step latent continuation.
+- `spiral_temporal_generation_tests`: validates exact future-token isolation, real next-latent loss reduction, deterministic autoregression, exact checkpoint output restoration, inverse-spectrum PCM synthesis, audio latent continuation, and video embedding continuation.
 
-The temporal encoder is intentionally modality-neutral: audio and video now differ in how they become feature tokens, not in how Spiral reasons across time. L14 remains a CPU reference path; optimized SIMD/GPU attention and learned temporal objectives can replace internals without changing the public sequence contract.
+L14 remains the bidirectional "understand the whole sequence" path. L15 is deliberately separate and causal because generation has a different contract: no future leakage. Video generation at this rung is latent/embedding generation only; Spiral does not claim to decode predicted frame embeddings back into RGB video yet.
 
 No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, FFmpeg, libsndfile, Stable Diffusion/diffusion wrapper, pretrained-model runtime, vector database, external agent framework, or hosted-model API is required.
 
@@ -54,6 +55,7 @@ images/image_0002.ppm<TAB>a blue signal in fog
 - L12 ✅ pre-RMSNorm/depth scaling + manifests + deterministic shuffle/split + microbatches + gradient accumulation + resumable optimizer state + metrics
 - L13 ✅ lazy dataset shards/cache + FP16/BF16/int8 foundations + PCM/WAV + STFT + spectral patches + trainable audio latent codec
 - L14 ✅ radix-2 FFT + streaming audio windows + shared temporal transformer + audio temporal encoder + video frame temporal encoder
-- L15 ⬜ temporal training objectives + audio generation/synthesis + frame prediction + Spiral Units unified multimodal runtime
+- L15 ✅ causal temporal attention + explicit temporal backward + next-latent learning + audio latent synthesis + video embedding generation + temporal checkpoints
+- L16 ⬜ learned phase/audio codec upgrade + frame latent decoder + temporal diffusion/flow + Spiral Units unified multimodal runtime
 
 The rule is simple: external systems may be studied and benchmarked, but Spiral owns its core abstractions and can replace any optional dependency.
