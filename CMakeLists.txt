@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(spiralos_ai_genius VERSION 0.0.16 LANGUAGES CXX)
+project(spiralos_ai_genius VERSION 0.0.17 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -33,6 +33,7 @@ add_library(spiral_core STATIC
     src/dsp.cpp
     src/temporal.cpp
     src/temporal_generation.cpp
+    src/media_generation.cpp
 )
 
 target_include_directories(spiral_core PUBLIC include)
@@ -112,3 +113,7 @@ add_test(NAME spiral_temporal_tests COMMAND spiral_temporal_tests)
 add_executable(spiral_temporal_generation_tests tests/temporal_generation_tests.cpp)
 target_link_libraries(spiral_temporal_generation_tests PRIVATE spiral_core)
 add_test(NAME spiral_temporal_generation_tests COMMAND spiral_temporal_generation_tests)
+
+add_executable(spiral_media_generation_tests tests/media_generation_tests.cpp)
+target_link_libraries(spiral_media_generation_tests PRIVATE spiral_core)
+add_test(NAME spiral_media_generation_tests COMMAND spiral_media_generation_tests)
