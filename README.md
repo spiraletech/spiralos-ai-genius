@@ -2,18 +2,14 @@
 
 Native, sovereign C++ intelligence infrastructure for SpiralOS, Hakui, EtherPlay, and future EtherTech systems.
 
-## Current rung: L1 — neural foundation
+## Current rung: L2 — causal attention foundation
 
-L0 established Spiral-owned tensor storage and tokenization. L1 turns that substrate into a small neural-compute runtime:
+L0 established Spiral-owned tensor storage and tokenization. L1 added neural parameters, layers, normalization, embeddings, and graph execution. L2 adds the first sequence-intelligence primitives required for an autoregressive language model:
 
-- `SpiralTensor`: explicit row-major strides plus mutable/const non-owning tensor views and zero-copy rank-2 transpose views.
-- `SpiralRandom`: deterministic SplitMix64-based random stream with uniform/normal tensor initialization.
-- `Parameter`: named, trainable weight ownership independent of any external ML framework.
-- `Linear`: Xavier-initialized dense projection.
-- `Embedding`: owned vocabulary lookup table for token representations.
-- `RMSNorm` and `LayerNorm`: last-dimension normalization primitives.
-- `Sequential`: first executable Spiral neural graph shell with parameter discovery.
-- `spiral_nn_tests`: deterministic tests for views, RNG, embeddings, normalization, graph execution, and parameter enumeration.
+- `tensor_ops`: reshape-copy validation, rank-3 batched matrix multiplication, last-dimension softmax, and causal-mask construction.
+- `apply_rotary_inplace`: Spiral-owned rotary position encoding for per-head query/key tensors.
+- `CausalSelfAttention`: owned Q/K/V/output projections, head split/merge, scaled dot-product attention, future-token masking, and multi-head context mixing.
+- `spiral_attention_tests`: validates batched math, row-wise softmax, mask topology, rotary norm preservation, parameter discovery, and the causal invariant that future-token changes cannot affect token 0.
 
 No llama.cpp, PyTorch, TensorFlow, diffusion runtime, or hosted-model API is required by this rung.
 
@@ -29,8 +25,8 @@ ctest --test-dir build -C Release --output-on-failure
 
 - L0 ✅ tensor/runtime + tokenizer foundation
 - L1 ✅ strides/views + RNG + parameters + embeddings + normalization + neural graph
-- L2 ⬜ tensor reshape/batched ops + positional encoding + causal masking + attention
-- L3 ⬜ transformer block + tiny autoregressive model
+- L2 ✅ reshape/batched ops + RoPE + causal masking + multi-head self-attention
+- L3 ⬜ transformer block + feed-forward network + tiny autoregressive model
 - L4 ⬜ autodiff + loss + optimizer + training loop
 - L5 ⬜ inference cache + sampling + native text generation
 - L6 ⬜ persistent memory + tools
