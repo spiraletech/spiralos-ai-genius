@@ -2,21 +2,21 @@
 
 Native, sovereign C++ intelligence infrastructure for SpiralOS, Hakui, EtherPlay, and future EtherTech systems.
 
-## Current rung: L9 — multimodal learning + first trained image generator
+## Current rung: L10 — iterative latent generative engine
 
-L0–L7 built Spiral's native language, training, runtime-memory, tool, and agent stack. L8 added owned RGB image representation, bidirectional vision encoding, cross-modal projection, and latent raster decoding. L9 adds the first visual learning path that can actually fit image data and condition generation on text:
+L0–L7 built Spiral's native language, training, runtime-memory, tool, and agent stack. L8 added owned vision infrastructure. L9 proved a fully native trained path from text conditioning to image latents and RGB pixels. L10 replaces one-shot latent prediction with an explicit iterative denoising runtime:
 
-- `prompt_features`: deterministic native text conditioning vectors derived from prompt bytes without an external tokenizer/model runtime.
-- `ImageAutoencoder`: patch-space image encoder + latent representation + decoder using Spiral-owned trainable parameters.
-- `AutoencoderTrainer`: explicit MSE reverse pass through the patch encoder/decoder with Spiral AdamW and gradient clipping.
-- `PromptLatentGenerator`: text features plus normalized 2D patch coordinates → per-patch image latent predictions.
-- `PromptGeneratorTrainer`: learns prompt-to-latent mappings against frozen latents produced by the trained image encoder.
-- `SpiralImageGenerator`: prompt → learned latent grid → learned decoder → RGB image.
-- `mean_squared_error` and `cosine_similarity`: native multimodal loss/similarity primitives for reconstruction and later alignment work.
-- image bundles: native binary save/load for autoencoder + prompt generator configuration-compatible weights.
-- `spiral_multimodal_tests`: requires autoencoder reconstruction loss to fall substantially, requires prompt-latent loss to fall substantially, trains distinct `red signal` and `blue signal` outputs, verifies visible channel separation, and proves bundle reload reproduces generated pixels exactly.
+- `NoiseScheduler`: linear or cosine noise schedules, deterministic clean↔noise interpolation, and descending sampling timesteps.
+- `timestep_features`: native sinusoidal timestep conditioning.
+- `LatentDenoiser`: noisy latent + prompt features + 2D patch coordinates + timestep features → hidden SiLU network → predicted clean latent.
+- `DenoiserTrainer`: explicit MSE reverse pass through the denoiser using Spiral AdamW and gradient clipping; no external autograd runtime.
+- `guided_prediction`: classifier-free-guidance equation combining unconditional and prompt-conditioned latent predictions.
+- `IterativeImageGenerator`: seeded Gaussian latent initialization followed by repeated denoising/refinement steps and native latent→RGB decode.
+- image-to-image: source images are encoded, partially noised according to strength, then refined with the same prompt-conditioned sampler.
+- latent-patch inpainting: masks preserve unedited source latent patches while prompt-driven refinement updates selected patches.
+- `spiral_flow_tests`: validates noise-schedule endpoints, deterministic timestep features, classifier-free guidance math, visual autoencoder learning, denoiser loss reduction, seeded generation determinism, prompt separation, guidance effect, img2img strength-zero preservation, and inpaint-mask preservation/edit behavior.
 
-L9 is intentionally a small, inspectable learned generator rather than a claim of frontier text-to-image quality. It proves the complete sovereign path `text → trained conditioning → trained latent → trained pixels`. A later rung can replace the linear latent predictor with deeper transformer/flow/denoising networks while preserving this owned data/training/runtime foundation.
+L10 remains deliberately small and inspectable. The denoiser is a compact two-layer latent network, not a claim of Stable Diffusion/Flux-class visual quality. The architectural milestone is that Spiral now owns the complete iterative generation loop `noise → conditioned denoising steps → latent → pixels`, so later transformer/flow architectures can replace the compact denoiser without replacing the scheduler, trainer, sampler, img2img, mask, or image runtime contracts.
 
 No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, Stable Diffusion/diffusion wrapper, pretrained-model runtime, vector database, external agent framework, or hosted-model API is required.
 
@@ -40,6 +40,7 @@ ctest --test-dir build -C Release --output-on-failure
 - L7 ✅ intent + task graph + memory injection + tool execution + critic + repair/retry + verification + traces + outcome memory
 - L8 ✅ native RGB images + patches + bidirectional vision transformer + cross-modal projection + latent raster decoder
 - L9 ✅ trainable image autoencoder + prompt-conditioned latent learning + native prompt-to-RGB generation + image bundles
-- L10 ⬜ deeper flow/denoising + audio/video + Spiral Units + integrated intelligence
+- L10 ✅ noise scheduling + timestep conditioning + trainable latent denoiser + CFG + iterative sampling + img2img + inpainting
+- L11 ⬜ deeper latent transformer/flow blocks + batched datasets + audio/video latent foundation + Spiral Units
 
 The rule is simple: external systems may be studied and benchmarked, but Spiral owns its core abstractions and can replace any optional dependency.

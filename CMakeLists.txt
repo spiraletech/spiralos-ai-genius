@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(spiralos_ai_genius VERSION 0.0.10 LANGUAGES CXX)
+project(spiralos_ai_genius VERSION 0.0.11 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -24,6 +24,7 @@ add_library(spiral_core STATIC
     src/agent.cpp
     src/vision.cpp
     src/multimodal.cpp
+    src/flow.cpp
 )
 
 target_include_directories(spiral_core PUBLIC include)
@@ -79,3 +80,7 @@ add_test(NAME spiral_vision_tests COMMAND spiral_vision_tests)
 add_executable(spiral_multimodal_tests tests/multimodal_tests.cpp)
 target_link_libraries(spiral_multimodal_tests PRIVATE spiral_core)
 add_test(NAME spiral_multimodal_tests COMMAND spiral_multimodal_tests)
+
+add_executable(spiral_flow_tests tests/flow_tests.cpp)
+target_link_libraries(spiral_flow_tests PRIVATE spiral_core)
+add_test(NAME spiral_flow_tests COMMAND spiral_flow_tests)
