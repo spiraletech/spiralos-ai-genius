@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(spiralos_ai_genius VERSION 0.0.25 LANGUAGES CXX)
+project(spiralos_ai_genius VERSION 0.0.26 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -46,6 +46,7 @@ add_library(spiral_core STATIC
     src/host_bridge.cpp
     src/gpu_compute.cpp
     src/native_host.cpp
+    src/openai_backend.cpp
     src/genius_shell.cpp
 )
 
@@ -54,7 +55,7 @@ target_compile_features(spiral_core PUBLIC cxx_std_20)
 target_link_libraries(spiral_core PUBLIC Threads::Threads)
 
 if(WIN32)
-    target_link_libraries(spiral_core PUBLIC d3d11 dxgi d3dcompiler)
+    target_link_libraries(spiral_core PUBLIC d3d11 dxgi d3dcompiler winhttp)
 endif()
 
 if(MSVC)
