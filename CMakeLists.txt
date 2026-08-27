@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(spiralos_ai_genius VERSION 0.0.6 LANGUAGES CXX)
+project(spiralos_ai_genius VERSION 0.0.7 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,6 +18,9 @@ add_library(spiral_core STATIC
     src/train_model_backward.cpp
     src/train.cpp
     src/generate.cpp
+    src/runtime.cpp
+    src/memory.cpp
+    src/tools.cpp
 )
 
 target_include_directories(spiral_core PUBLIC include)
@@ -57,3 +60,7 @@ add_test(NAME spiral_train_tests COMMAND spiral_train_tests)
 add_executable(spiral_generate_tests tests/generate_tests.cpp)
 target_link_libraries(spiral_generate_tests PRIVATE spiral_core)
 add_test(NAME spiral_generate_tests COMMAND spiral_generate_tests)
+
+add_executable(spiral_runtime_tests tests/runtime_tests.cpp)
+target_link_libraries(spiral_runtime_tests PRIVATE spiral_core)
+add_test(NAME spiral_runtime_tests COMMAND spiral_runtime_tests)
