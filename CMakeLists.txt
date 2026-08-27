@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(spiralos_ai_genius VERSION 0.0.21 LANGUAGES CXX)
+project(spiralos_ai_genius VERSION 0.0.22 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,6 +41,9 @@ add_library(spiral_core STATIC
     src/units.cpp
     src/device.cpp
     src/renderer.cpp
+    src/raster.cpp
+    src/visual_self_test.cpp
+    src/host_bridge.cpp
 )
 
 target_include_directories(spiral_core PUBLIC include)
@@ -141,3 +144,7 @@ add_test(NAME spiral_units_tests COMMAND spiral_units_tests)
 add_executable(spiral_renderer_device_tests tests/renderer_device_tests.cpp)
 target_link_libraries(spiral_renderer_device_tests PRIVATE spiral_core)
 add_test(NAME spiral_renderer_device_tests COMMAND spiral_renderer_device_tests)
+
+add_executable(spiral_visual_self_test_tests tests/visual_self_test_tests.cpp)
+target_link_libraries(spiral_visual_self_test_tests PRIVATE spiral_core)
+add_test(NAME spiral_visual_self_test_tests COMMAND spiral_visual_self_test_tests)
