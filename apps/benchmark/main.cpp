@@ -1,5 +1,6 @@
 #include "spiral/compute.hpp"
 #include "spiral/gpu.hpp"
+#include "spiral/gpu_classify.hpp"
 #include "spiral/gpu_compute.hpp"
 #include "spiral/tensor.hpp"
 
@@ -103,6 +104,8 @@ struct Result {
     double gpu_resident_chain_ms = 0.0;
     double matmul_ratio_cpu_over_gpu = 0.0;
     double chain_ratio_cpu_over_gpu = 0.0;
+    double cpu_matmul_gflops = 0.0;
+    double gpu_cold_matmul_gflops = 0.0;
     float matmul_max_abs_error = 0.0F;
     float chain_max_abs_error = 0.0F;
     std::uint64_t resident_dispatches = 0;
@@ -164,6 +167,9 @@ Result run_case(
 
     if (result.gpu_cold_matmul_ms > 0.0) result.matmul_ratio_cpu_over_gpu = result.cpu_matmul_ms / result.gpu_cold_matmul_ms;
     if (result.gpu_resident_chain_ms > 0.0) result.chain_ratio_cpu_over_gpu = result.cpu_chain_ms / result.gpu_resident_chain_ms;
+    const double operations = 2.0 * static_cast<double>(size) * static_cast<double>(size) * static_cast<double>(size);
+    if (result.cpu_matmul_ms > 0.0) result.cpu_matmul_gflops = operations / (result.cpu_matmul_ms * 1.0e6);
+    if (result.gpu_cold_matmul_ms > 0.0) result.gpu_cold_matmul_gflops = operations / (result.gpu_cold_matmul_ms * 1.0e6);
     return result;
 }
 
@@ -176,20 +182,25 @@ std::string render_json(
     std::ostringstream out;
     out << std::fixed << std::setprecision(6);
     out << "{\n";
-    out << "  \"schema\": \"spiral-performance-proof-v1\",\n";
+    out << "  \"schema\": \"spiral-performance-proof-v2\",\n";
     out << "  \"gpu_supported\": " << (supported ? "true" : "false") << ",\n";
     if (capabilities != nullptr) {
-        out << "  \"hardware_accelerated\": " << (capabilities->hardware_accelerated ? "true" : "false") << ",\n";
+        const bool physical = spiral::gpu::is_physical_gpu(*capabilities);
+        out << "  \"d3d_driver_reported_hardware\": " << (capabilities->hardware_accelerated ? "true" : "false") << ",\n";
+        out << "  \"physical_hardware_accelerated\": " << (physical ? "true" : "false") << ",\n";
+        out << "  \"adapter_execution_class\": \"" << spiral::gpu::adapter_execution_class(*capabilities) << "\",\n";
         out << "  \"adapter\": \"" << escape_json(capabilities->adapter_name) << "\",\n";
         out << "  \"feature_level\": \"" << escape_json(capabilities->feature_level) << "\",\n";
     } else {
-        out << "  \"hardware_accelerated\": false,\n";
+        out << "  \"d3d_driver_reported_hardware\": false,\n";
+        out << "  \"physical_hardware_accelerated\": false,\n";
+        out << "  \"adapter_execution_class\": \"unavailable\",\n";
         out << "  \"adapter\": \"\",\n";
         out << "  \"feature_level\": \"\",\n";
     }
     out << "  \"cpu_workers\": " << cpu_workers << ",\n";
     out << "  \"error\": \"" << escape_json(error) << "\",\n";
-    out << "  \"claim_policy\": \"speedup is claimable only when hardware_accelerated=true\",\n";
+    out << "  \"claim_policy\": \"hardware speedup is claimable only when physical_hardware_accelerated=true; software adapters are evidence of correctness only\",\n";
     out << "  \"cases\": [\n";
     for (std::size_t i = 0; i < results.size(); ++i) {
         const auto& r = results[i];
@@ -201,6 +212,8 @@ std::string render_json(
         out << "      \"gpu_resident_chain_ms\": " << r.gpu_resident_chain_ms << ",\n";
         out << "      \"cpu_over_gpu_matmul_ratio\": " << r.matmul_ratio_cpu_over_gpu << ",\n";
         out << "      \"cpu_over_gpu_chain_ratio\": " << r.chain_ratio_cpu_over_gpu << ",\n";
+        out << "      \"cpu_matmul_effective_gflops\": " << r.cpu_matmul_gflops << ",\n";
+        out << "      \"gpu_cold_matmul_effective_gflops\": " << r.gpu_cold_matmul_gflops << ",\n";
         out << "      \"matmul_max_abs_error\": " << r.matmul_max_abs_error << ",\n";
         out << "      \"chain_max_abs_error\": " << r.chain_max_abs_error << ",\n";
         out << "      \"resident_dispatches\": " << r.resident_dispatches << ",\n";
