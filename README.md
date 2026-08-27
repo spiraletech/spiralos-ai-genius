@@ -2,21 +2,22 @@
 
 Native, sovereign C++ intelligence infrastructure for SpiralOS, Hakui, EtherPlay, and future EtherTech systems.
 
-## Current rung: L10 — iterative latent generative engine
+## Current rung: L11 — trainable latent transformer denoiser
 
-L0–L7 built Spiral's native language, training, runtime-memory, tool, and agent stack. L8 added owned vision infrastructure. L9 proved a fully native trained path from text conditioning to image latents and RGB pixels. L10 replaces one-shot latent prediction with an explicit iterative denoising runtime:
+L0–L10 established Spiral-owned language, training, agents, vision, learned text-to-image latents, and an iterative CFG/img2img/inpaint sampler. L11 replaces the compact denoiser ceiling with a scalable patch-transformer path while keeping the L10 sampling contract intact:
 
-- `NoiseScheduler`: linear or cosine noise schedules, deterministic clean↔noise interpolation, and descending sampling timesteps.
-- `timestep_features`: native sinusoidal timestep conditioning.
-- `LatentDenoiser`: noisy latent + prompt features + 2D patch coordinates + timestep features → hidden SiLU network → predicted clean latent.
-- `DenoiserTrainer`: explicit MSE reverse pass through the denoiser using Spiral AdamW and gradient clipping; no external autograd runtime.
-- `guided_prediction`: classifier-free-guidance equation combining unconditional and prompt-conditioned latent predictions.
-- `IterativeImageGenerator`: seeded Gaussian latent initialization followed by repeated denoising/refinement steps and native latent→RGB decode.
-- image-to-image: source images are encoded, partially noised according to strength, then refined with the same prompt-conditioned sampler.
-- latent-patch inpainting: masks preserve unedited source latent patches while prompt-driven refinement updates selected patches.
-- `spiral_flow_tests`: validates noise-schedule endpoints, deterministic timestep features, classifier-free guidance math, visual autoencoder learning, denoiser loss reduction, seeded generation determinism, prompt separation, guidance effect, img2img strength-zero preservation, and inpaint-mask preservation/edit behavior.
+- `flow::LatentPredictor`: common native predictor interface so compact and transformer denoisers drive the same iterative generator.
+- `prompt_token_features`: deterministic multi-token prompt representation for real cross-attention rather than one pooled conditioning vector.
+- `MultiHeadAttention`: reusable trainable query/context attention supporting both latent self-attention and prompt cross-attention.
+- `LatentTransformerBlock`: latent self-attention → residual → prompt cross-attention → residual → SiLU feed-forward → residual.
+- `LatentTransformerDenoiser`: noisy latent patches + 2D positions + timestep features → stacked transformer blocks → predicted clean latent patches.
+- explicit reverse-mode gradients through Q/K/V projections, attention softmax, values, output projections, cross-attention, residual paths, and feed-forward layers.
+- `ImagePromptDataset` plus `LatentTransformerTrainer`: true batch gradient accumulation with Spiral AdamW and gradient clipping.
+- native transformer checkpoint save/load with configuration validation.
+- direct compatibility with L10 deterministic generation, classifier-free guidance, image-to-image, and inpainting through `LatentPredictor`.
+- `spiral_latent_transformer_tests`: validates prompt-token determinism, nonlocal patch coupling, prompt coupling, batch denoising loss reduction, sampler determinism/prompt sensitivity, and exact checkpoint reload.
 
-L10 remains deliberately small and inspectable. The denoiser is a compact two-layer latent network, not a claim of Stable Diffusion/Flux-class visual quality. The architectural milestone is that Spiral now owns the complete iterative generation loop `noise → conditioned denoising steps → latent → pixels`, so later transformer/flow architectures can replace the compact denoiser without replacing the scheduler, trainer, sampler, img2img, mask, or image runtime contracts.
+L11 is still a deliberately tiny CPU reference model. The milestone is architectural: increasing model dimension, heads, layers, training data, and compute now scales an owned attention-based visual model instead of requiring a different external generator runtime.
 
 No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, Stable Diffusion/diffusion wrapper, pretrained-model runtime, vector database, external agent framework, or hosted-model API is required.
 
@@ -41,6 +42,7 @@ ctest --test-dir build -C Release --output-on-failure
 - L8 ✅ native RGB images + patches + bidirectional vision transformer + cross-modal projection + latent raster decoder
 - L9 ✅ trainable image autoencoder + prompt-conditioned latent learning + native prompt-to-RGB generation + image bundles
 - L10 ✅ noise scheduling + timestep conditioning + trainable latent denoiser + CFG + iterative sampling + img2img + inpainting
-- L11 ⬜ deeper latent transformer/flow blocks + batched datasets + audio/video latent foundation + Spiral Units
+- L11 ✅ latent self-attention + prompt cross-attention + residual transformer denoiser + batch training + checkpoints
+- L12 ⬜ dataset manifests/shuffling + transformer normalization/depth scaling + audio latent codec + temporal/video attention + Spiral Units
 
 The rule is simple: external systems may be studied and benchmarked, but Spiral owns its core abstractions and can replace any optional dependency.
