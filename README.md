@@ -2,22 +2,21 @@
 
 Native, sovereign C++ intelligence infrastructure for SpiralOS, Hakui, EtherPlay, and future EtherTech systems.
 
-## Current rung: L13 — streaming data + numeric formats + audio latent foundation
+## Current rung: L14 — shared temporal engine for audio + video
 
-L0–L12 established Spiral-owned language, training, agents, vision, iterative image generation, latent transformers, and resumable scale training. L13 opens the next two scaling surfaces: feeding larger datasets without loading them all into RAM, and giving Spiral a native audio representation that can later share temporal modeling machinery with video.
+L0–L13 established Spiral-owned language, training, agents, vision, iterative image generation, scale training, streaming datasets, numeric formats, WAV/STFT audio, and a trainable audio latent codec. L14 adds the first shared representation of ordered time across modalities:
 
-- `data::ImagePromptShard`: indexed native shard format that scans record metadata once and lazily loads prompt/RGB payloads on demand.
-- `data::ShardedImagePromptDataset`: multiple shards presented as one logical dataset with bounded resident cache and explicit prefetch.
-- `precision::NumericFormat`: native Float32/Float16/BFloat16/Int8 format identifiers.
-- IEEE-style FP16 conversion, BF16 conversion, and symmetric int8 tensor quantization/dequantization.
-- `audio::AudioBuffer`: native interleaved PCM float buffer with PCM16 WAV load/save and mono conversion.
-- `audio::stft_magnitude`: Hann-window reference STFT implemented in C++ with no external DSP runtime.
-- `audio::spectral_patches`: converts time-frequency frames into fixed-size neural patch matrices.
-- `audio::AudioLatentCodec`: trainable spectral-patch encoder/decoder using Spiral Linear layers.
-- `audio::AudioCodecTrainer`: explicit reconstruction-loss backprop through encoder and decoder using Spiral AdamW.
-- `spiral_data_audio_tests`: validates numeric conversion/quantization, lazy shard access/cache bounds, WAV round-trip, frequency-bin detection, spectral patching, and real audio-codec loss reduction.
+- `dsp::fft_inplace`: native iterative radix-2 Cooley–Tukey FFT with inverse support.
+- `dsp::stft_magnitude_fft`: Hann-window FFT STFT that numerically tracks the older transparent O(N²) reference DFT for power-of-two frames.
+- `temporal::AudioWindowCursor`: deterministic overlapping audio windows for long-stream processing.
+- `temporal::TemporalTransformerEncoder`: ordered features → input projection → temporal sinusoidal positions → pre-RMSNorm multi-head self-attention/FFN blocks → output tokens or pooled sequence embedding.
+- depth-scaled residual branches using `1/sqrt(num_layers)`.
+- `temporal::AudioTemporalEncoder`: PCM audio → FFT STFT → spectral patches → trained audio latents → shared temporal transformer.
+- `temporal::VideoFrameSequence`: ordered RGB frames with explicit frame rate.
+- `temporal::VideoTemporalEncoder`: each frame → Spiral VisionEncoder pooled embedding → shared temporal transformer.
+- `spiral_temporal_tests`: validates FFT inverse round-trip, FFT-vs-reference STFT agreement, dominant-frequency detection, streaming-window coverage, deterministic temporal initialization, order sensitivity, audio temporal latents, and video frame-order sensitivity.
 
-L13 is still a CPU reference implementation. The STFT deliberately uses a transparent O(N²) DFT so correctness is owned first; optimized FFT/SIMD/GPU kernels can replace it behind the same API later.
+The temporal encoder is intentionally modality-neutral: audio and video now differ in how they become feature tokens, not in how Spiral reasons across time. L14 remains a CPU reference path; optimized SIMD/GPU attention and learned temporal objectives can replace internals without changing the public sequence contract.
 
 No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, FFmpeg, libsndfile, Stable Diffusion/diffusion wrapper, pretrained-model runtime, vector database, external agent framework, or hosted-model API is required.
 
@@ -54,7 +53,7 @@ images/image_0002.ppm<TAB>a blue signal in fog
 - L11 ✅ latent self-attention + prompt cross-attention + residual transformer denoiser + batch training + checkpoints
 - L12 ✅ pre-RMSNorm/depth scaling + manifests + deterministic shuffle/split + microbatches + gradient accumulation + resumable optimizer state + metrics
 - L13 ✅ lazy dataset shards/cache + FP16/BF16/int8 foundations + PCM/WAV + STFT + spectral patches + trainable audio latent codec
-- L14 ⬜ optimized dataset pipeline + train CLI + SIMD/FFT kernels + temporal audio transformer + video frame tensors/attention
-- L15 ⬜ Spiral Units + unified multimodal runtime
+- L14 ✅ radix-2 FFT + streaming audio windows + shared temporal transformer + audio temporal encoder + video frame temporal encoder
+- L15 ⬜ temporal training objectives + audio generation/synthesis + frame prediction + Spiral Units unified multimodal runtime
 
 The rule is simple: external systems may be studied and benchmarked, but Spiral owns its core abstractions and can replace any optional dependency.

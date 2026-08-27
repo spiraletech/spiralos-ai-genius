@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(spiralos_ai_genius VERSION 0.0.14 LANGUAGES CXX)
+project(spiralos_ai_genius VERSION 0.0.15 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -30,6 +30,8 @@ add_library(spiral_core STATIC
     src/precision.cpp
     src/data.cpp
     src/audio.cpp
+    src/dsp.cpp
+    src/temporal.cpp
 )
 
 target_include_directories(spiral_core PUBLIC include)
@@ -101,3 +103,7 @@ add_test(NAME spiral_scale_tests COMMAND spiral_scale_tests)
 add_executable(spiral_data_audio_tests tests/data_audio_tests.cpp)
 target_link_libraries(spiral_data_audio_tests PRIVATE spiral_core)
 add_test(NAME spiral_data_audio_tests COMMAND spiral_data_audio_tests)
+
+add_executable(spiral_temporal_tests tests/temporal_tests.cpp)
+target_link_libraries(spiral_temporal_tests PRIVATE spiral_core)
+add_test(NAME spiral_temporal_tests COMMAND spiral_temporal_tests)
