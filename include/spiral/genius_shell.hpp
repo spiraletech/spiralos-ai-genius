@@ -3,6 +3,7 @@
 #include "spiral/generate.hpp"
 #include "spiral/gpu.hpp"
 #include "spiral/gpu_compute.hpp"
+#include "spiral/openai_backend.hpp"
 #include "spiral/runtime.hpp"
 
 #include <cstddef>
@@ -19,6 +20,12 @@ enum class ShellMode {
     Gpt,
 };
 
+enum class GptBackend {
+    Auto,
+    OpenAI,
+    SpiralLocal,
+};
+
 struct ChatTurn {
     std::string role;
     std::string content;
@@ -26,11 +33,15 @@ struct ChatTurn {
 
 struct ShellStatus {
     ShellMode mode = ShellMode::Gpt;
+    GptBackend gpt_backend = GptBackend::Auto;
     bool gpu_platform_supported = false;
     bool gpu_available = false;
     bool gpu_hardware_accelerated = false;
     std::string gpu_adapter;
     std::string gpu_feature_level;
+    bool openai_platform_supported = false;
+    bool openai_key_present = false;
+    std::string openai_model;
     bool model_loaded = false;
     std::string model_path;
     std::size_t conversation_turns = 0;
@@ -44,9 +55,11 @@ public:
 
     [[nodiscard]] ShellStatus status() const;
     [[nodiscard]] ShellMode mode() const noexcept { return mode_; }
+    [[nodiscard]] GptBackend gpt_backend() const noexcept { return gpt_backend_; }
     [[nodiscard]] const std::vector<ChatTurn>& history() const noexcept { return history_; }
 
     void set_mode(ShellMode mode) noexcept { mode_ = mode; }
+    void set_gpt_backend(GptBackend backend) noexcept { gpt_backend_ = backend; }
     void clear_history() noexcept { history_.clear(); }
 
     [[nodiscard]] bool load_model(const std::string& path, std::string* error = nullptr) noexcept;
@@ -64,12 +77,16 @@ private:
     [[nodiscard]] std::string run_command(std::string_view line);
     [[nodiscard]] std::string native_reply(std::string_view user_message);
     [[nodiscard]] std::string gpt_reply();
+    [[nodiscard]] std::string local_spiral_reply();
+    [[nodiscard]] std::string openai_gpt_reply();
     [[nodiscard]] std::string build_chat_prompt() const;
+    [[nodiscard]] std::string build_openai_input() const;
     [[nodiscard]] static std::string trim(std::string_view text);
     [[nodiscard]] static std::optional<float> parse_float(std::string_view text);
     [[nodiscard]] static std::optional<std::size_t> parse_size(std::string_view text);
 
     ShellMode mode_ = ShellMode::Gpt;
+    GptBackend gpt_backend_ = GptBackend::Auto;
     bool should_exit_ = false;
     std::vector<ChatTurn> history_;
 
@@ -77,11 +94,15 @@ private:
     std::unique_ptr<gpu::D3D11ComputeEngine> gpu_compute_;
     std::string gpu_error_;
 
+    openai::ResponsesBackend openai_backend_;
+    std::string openai_model_;
+
     std::unique_ptr<runtime::LoadedModelBundle> model_bundle_;
     std::string model_path_;
     generate::GenerationConfig generation_;
 };
 
 [[nodiscard]] std::string shell_mode_name(ShellMode mode);
+[[nodiscard]] std::string gpt_backend_name(GptBackend backend);
 
 } // namespace spiral::genius
