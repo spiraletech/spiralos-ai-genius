@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
+#include <filesystem>
 #include <iostream>
 #include <vector>
 
@@ -54,19 +55,19 @@ int main() {
     const float norm = spiral::train::global_grad_norm(parameters);
     assert(std::isfinite(norm));
 
-    const std::string checkpoint_path = "/tmp/spiral_l4_checkpoint.bin";
-    spiral::train::save_checkpoint(model, checkpoint_path);
+    const auto checkpoint_path = std::filesystem::temp_directory_path() / "spiral_l4_checkpoint.bin";
+    spiral::train::save_checkpoint(model, checkpoint_path.string());
     const auto reference_logits = model.forward(example.input);
 
     Random other_rng(77);
     SpiralLanguageModel restored(config, other_rng);
-    spiral::train::load_checkpoint(restored, checkpoint_path);
+    spiral::train::load_checkpoint(restored, checkpoint_path.string());
     const auto restored_logits = restored.forward(example.input);
     assert(reference_logits.shape() == restored_logits.shape());
     for (std::size_t i = 0; i < reference_logits.numel(); ++i) {
         assert(near(reference_logits.data()[i], restored_logits.data()[i]));
     }
-    std::remove(checkpoint_path.c_str());
+    std::filesystem::remove(checkpoint_path);
 
     std::cout << "spiral_train_tests: PASS initial=" << initial_loss
               << " trained=" << trained_loss << '\n';
