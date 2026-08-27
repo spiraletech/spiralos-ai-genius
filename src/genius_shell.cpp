@@ -33,7 +33,7 @@ std::string maybe_unquote(std::string value) {
 
 } // namespace
 
-GeniusShell::GeniusShell() {
+GeniusShell::GeniusShell() : openai_model_(openai::ResponsesBackend::default_model()) {
     generation_.max_new_tokens = 128;
     generation_.max_context_tokens = 1024;
     generation_.sampling.temperature = 0.8F;
@@ -55,6 +55,7 @@ GeniusShell::GeniusShell() {
 ShellStatus GeniusShell::status() const {
     ShellStatus result;
     result.mode = mode_;
+    result.gpt_backend = gpt_backend_;
     result.gpu_platform_supported = gpu::D3D11GpuDevice::platform_supported();
     result.gpu_available = gpu_device_ != nullptr && gpu_compute_ != nullptr && gpu_compute_->available();
     if (gpu_device_ != nullptr) {
@@ -63,6 +64,9 @@ ShellStatus GeniusShell::status() const {
         result.gpu_adapter = capabilities.adapter_name;
         result.gpu_feature_level = capabilities.feature_level;
     }
+    result.openai_platform_supported = openai::ResponsesBackend::platform_supported();
+    result.openai_key_present = openai::ResponsesBackend::api_key_present();
+    result.openai_model = openai_model_;
     result.model_loaded = model_bundle_ != nullptr && model_bundle_->model != nullptr;
     result.model_path = model_path_;
     result.conversation_turns = history_.size();
@@ -143,8 +147,7 @@ std::string GeniusShell::chat(std::string_view user_message) {
 std::string GeniusShell::build_chat_prompt() const {
     std::ostringstream prompt;
     prompt << "SYSTEM: You are Spiral AI Genius. Respond helpfully, directly, and concisely.\n";
-    prompt << "SYSTEM: This is GPT MODE, a chat protocol running on a local Spiral model bundle.\n";
-
+    prompt << "SYSTEM: This is GPT MODE using a local sovereign Spiral model bundle.\n";
     constexpr std::size_t max_turns = 16;
     const std::size_t start = history_.size() > max_turns ? history_.size() - max_turns : 0;
     for (std::size_t i = start; i < history_.size(); ++i) {
@@ -155,28 +158,78 @@ std::string GeniusShell::build_chat_prompt() const {
     return prompt.str();
 }
 
-std::string GeniusShell::gpt_reply() {
-    if (model_bundle_ == nullptr || model_bundle_->model == nullptr) {
-        return "GPT MODE is online, but no trained Spiral language-model bundle is loaded. "
-               "Use /load <path-to-model.bundle>. I will not fake intelligence with random weights.";
+std::string GeniusShell::build_openai_input() const {
+    std::ostringstream input;
+    constexpr std::size_t max_turns = 24;
+    const std::size_t start = history_.size() > max_turns ? history_.size() - max_turns : 0;
+    for (std::size_t i = start; i < history_.size(); ++i) {
+        input << (history_[i].role == "assistant" ? "ASSISTANT: " : "USER: ")
+              << history_[i].content << '\n';
     }
+    input << "ASSISTANT: ";
+    return input.str();
+}
 
+std::string GeniusShell::local_spiral_reply() {
+    if (model_bundle_ == nullptr || model_bundle_->model == nullptr) {
+        return "LOCAL SPIRAL backend has no trained language-model bundle loaded. Use /load <path-to-model.bundle>. "
+               "I will not fake intelligence with random weights.";
+    }
     try {
         generate::ByteTextGenerator generator(*model_bundle_->model);
         auto result = generator.generate(build_chat_prompt(), generation_);
         std::string text = clean_generated_text(std::move(result.text));
-        if (text.empty()) return "[loaded model emitted no text]";
-        return text;
+        return text.empty() ? "[loaded Spiral model emitted no text]" : text;
     } catch (const std::exception& exception) {
-        return std::string("GPT MODE generation error: ") + exception.what();
+        return std::string("LOCAL SPIRAL generation error: ") + exception.what();
     }
+}
+
+std::string GeniusShell::openai_gpt_reply() {
+    if (!openai::ResponsesBackend::platform_supported()) {
+        return "OPENAI backend is unavailable on this platform at this rung.";
+    }
+    if (!openai::ResponsesBackend::api_key_present()) {
+        return "OPENAI backend selected, but OPENAI_API_KEY is not set. Set it in your Windows environment and restart the shell.";
+    }
+    const auto response = openai_backend_.respond(
+        "You are GPT inside Spiral AI Genius. Respond helpfully, directly, and concisely. Preserve the conversation context provided in the input.",
+        build_openai_input(),
+        openai_model_);
+    if (!response.ok) {
+        std::ostringstream out;
+        out << "OPENAI GPT error";
+        if (response.http_status != 0) out << " (HTTP " << response.http_status << ')';
+        out << ": " << response.error;
+        return out.str();
+    }
+    return response.text.empty() ? "[OpenAI response contained no text]" : response.text;
+}
+
+std::string GeniusShell::gpt_reply() {
+    switch (gpt_backend_) {
+        case GptBackend::OpenAI:
+            return openai_gpt_reply();
+        case GptBackend::SpiralLocal:
+            return local_spiral_reply();
+        case GptBackend::Auto:
+            if (openai::ResponsesBackend::platform_supported() && openai::ResponsesBackend::api_key_present()) {
+                const std::string response = openai_gpt_reply();
+                if (response.rfind("OPENAI GPT error", 0) != 0) return response;
+                if (model_bundle_ != nullptr && model_bundle_->model != nullptr) return local_spiral_reply();
+                return response;
+            }
+            if (model_bundle_ != nullptr && model_bundle_->model != nullptr) return local_spiral_reply();
+            return "GPT MODE has no active backend. For real GPT, set OPENAI_API_KEY and use /backend openai. "
+                   "For sovereign local generation, /load a trained Spiral model and use /backend spiral.";
+    }
+    return "GPT MODE backend routing failed.";
 }
 
 std::string GeniusShell::native_reply(std::string_view user_message) {
     ByteTokenizer tokenizer;
     const auto tokens = tokenizer.encode(user_message);
     const auto current = status();
-
     std::ostringstream out;
     out << "NATIVE MODE / substrate inspection\n";
     out << "input bytes: " << user_message.size() << " | byte tokens: " << tokens.size() << '\n';
@@ -185,7 +238,8 @@ std::string GeniusShell::native_reply(std::string_view user_message) {
         out << " | " << (current.gpu_hardware_accelerated ? "hardware" : "WARP")
             << " | " << current.gpu_adapter;
     }
-    out << "\nmodel bundle: " << (current.model_loaded ? current.model_path : "none")
+    out << "\nlocal model bundle: " << (current.model_loaded ? current.model_path : "none")
+        << "\nOpenAI key: " << (current.openai_key_present ? "present" : "not set")
         << "\nUse /gpt for conversational mode.";
     return out.str();
 }
@@ -199,22 +253,37 @@ std::string GeniusShell::run_command(std::string_view line) {
     if (command == "/status") return status_text();
     if (command == "/gpt") {
         mode_ = ShellMode::Gpt;
-        return "GPT MODE enabled — ChatGPT-style conversation protocol over the local Spiral model backend.";
+        return "GPT MODE enabled. Backend = " + gpt_backend_name(gpt_backend_) + ".";
     }
     if (command == "/native") {
         mode_ = ShellMode::Native;
         return "NATIVE MODE enabled — deterministic runtime/substrate inspection.";
     }
     if (command == "/mode") {
-        if (argument == "gpt") {
-            mode_ = ShellMode::Gpt;
-            return "mode = GPT";
-        }
-        if (argument == "native") {
-            mode_ = ShellMode::Native;
-            return "mode = NATIVE";
-        }
+        if (argument == "gpt") { mode_ = ShellMode::Gpt; return "mode = GPT"; }
+        if (argument == "native") { mode_ = ShellMode::Native; return "mode = NATIVE"; }
         return "usage: /mode gpt|native";
+    }
+    if (command == "/backend") {
+        if (argument.empty()) return "GPT backend = " + gpt_backend_name(gpt_backend_);
+        if (argument == "auto") { gpt_backend_ = GptBackend::Auto; return "GPT backend = AUTO"; }
+        if (argument == "openai" || argument == "gpt") { gpt_backend_ = GptBackend::OpenAI; return "GPT backend = OPENAI"; }
+        if (argument == "spiral" || argument == "local") { gpt_backend_ = GptBackend::SpiralLocal; return "GPT backend = SPIRAL_LOCAL"; }
+        return "usage: /backend auto|openai|spiral";
+    }
+    if (command == "/openai") {
+        const auto current = status();
+        std::ostringstream out;
+        out << "OPENAI GPT: " << (current.openai_key_present && current.openai_platform_supported ? "READY" : "NOT READY") << '\n';
+        out << "platform: " << (current.openai_platform_supported ? "supported" : "unsupported") << '\n';
+        out << "OPENAI_API_KEY: " << (current.openai_key_present ? "present" : "not set") << '\n';
+        out << "model: " << current.openai_model;
+        return out.str();
+    }
+    if (command == "/gptmodel") {
+        if (argument.empty()) return "OpenAI model = " + openai_model_;
+        openai_model_ = argument;
+        return "OpenAI model = " + openai_model_;
     }
     if (command == "/gpu") {
         const auto current = status();
@@ -232,39 +301,30 @@ std::string GeniusShell::run_command(std::string_view line) {
     }
     if (command == "/model") {
         const auto current = status();
-        if (!current.model_loaded) return "MODEL: none loaded. Use /load <bundle-path>.";
-        return "MODEL: loaded from " + current.model_path;
+        if (!current.model_loaded) return "LOCAL MODEL: none loaded. Use /load <bundle-path>.";
+        return "LOCAL MODEL: loaded from " + current.model_path;
     }
     if (command == "/load") {
         if (argument.empty()) return "usage: /load <path-to-model.bundle>";
         const std::string path = maybe_unquote(argument);
         std::string error;
         if (!load_model(path, &error)) return "MODEL LOAD FAILED: " + error;
-        return "MODEL LOADED: " + path;
+        return "LOCAL MODEL LOADED: " + path;
     }
-    if (command == "/unload") {
-        unload_model();
-        return "MODEL unloaded.";
-    }
-    if (command == "/clear") {
-        clear_history();
-        return "conversation history cleared.";
-    }
+    if (command == "/unload") { unload_model(); return "LOCAL MODEL unloaded."; }
+    if (command == "/clear") { clear_history(); return "conversation history cleared."; }
     if (command == "/temperature") {
         const auto value = parse_float(argument);
-        if (!value.has_value() || *value < 0.05F || *value > 2.0F) {
-            return "usage: /temperature <0.05..2.0>";
-        }
+        if (!value.has_value() || *value < 0.05F || *value > 2.0F) return "usage: /temperature <0.05..2.0>";
         generation_.sampling.temperature = *value;
-        std::ostringstream out;
-        out << "temperature = " << std::fixed << std::setprecision(2) << *value;
+        std::ostringstream out; out << "local temperature = " << std::fixed << std::setprecision(2) << *value;
         return out.str();
     }
     if (command == "/max") {
         const auto value = parse_size(argument);
         if (!value.has_value() || *value == 0 || *value > 2048) return "usage: /max <1..2048>";
         generation_.max_new_tokens = *value;
-        return "max new tokens = " + std::to_string(*value);
+        return "local max new tokens = " + std::to_string(*value);
     }
     if (command == "/history") {
         if (history_.empty()) return "history: empty";
@@ -282,40 +342,39 @@ std::string GeniusShell::run_command(std::string_view line) {
                " turns. L6 persistent MemoryStore exists in the library; shell persistence is not bound yet.";
     }
     if (command == "/agent") {
-        return "AGENT: L7 AgentEngine is compiled into Spiral. This shell currently exposes chat/model control; autonomous planner binding is not enabled yet.";
+        return "AGENT: L7 AgentEngine is compiled into Spiral. Autonomous planner binding is not enabled in this console yet.";
     }
     if (command == "/render") {
-        return "RENDER: L21 software framebuffer + L22 Win32/D3D11 host are compiled. This Genius shell currently uses the console surface.";
+        return "RENDER: L21 software framebuffer + L22 Win32/D3D11 host are compiled. Genius currently uses the console surface.";
     }
-    if (command == "/exit" || command == "/quit") {
-        should_exit_ = true;
-        return "Spiral sleeping.";
-    }
+    if (command == "/exit" || command == "/quit") { should_exit_ = true; return "Spiral sleeping."; }
     return "unknown command: " + command + " — use /help";
 }
 
 std::string GeniusShell::banner_text() const {
     std::ostringstream out;
     out << "SPIRAL AI GENIUS / L23 SHELL\n";
-    out << "mode: GPT | local sovereign runtime\n";
-    out << "type /help for commands | /native for substrate mode\n";
-    out << "GPT MODE is a chat UX/protocol. It does not claim OpenAI-hosted GPT unless a future external backend is explicitly configured.";
+    out << "mode: GPT | backend: " << gpt_backend_name(gpt_backend_) << "\n";
+    out << "GPT can route to OpenAI Responses API when OPENAI_API_KEY is set, or to a trained local Spiral bundle.\n";
+    out << "type /help for commands | /native for sovereign substrate mode";
     return out.str();
 }
 
 std::string GeniusShell::help_text() const {
     return
-        "/gpt                 GPT-style conversation mode\n"
+        "/gpt                 conversational GPT mode\n"
         "/native              deterministic native/runtime mode\n"
-        "/mode gpt|native     switch mode\n"
+        "/backend <name>      auto|openai|spiral\n"
+        "/openai              OpenAI API readiness (never prints the key)\n"
+        "/gptmodel [id]       show/set OpenAI model id\n"
         "/status              full runtime status\n"
         "/gpu                 D3D11 compute status\n"
-        "/model               loaded model status\n"
+        "/model               local Spiral model status\n"
         "/load <bundle>       load native Spiral model bundle\n"
-        "/unload              unload model\n"
-        "/temperature <n>     sampling temperature 0.05..2.0\n"
-        "/max <n>             max generated tokens 1..2048\n"
-        "/history             show current conversation turns\n"
+        "/unload              unload local model\n"
+        "/temperature <n>     local sampling temperature 0.05..2.0\n"
+        "/max <n>             local max generated tokens 1..2048\n"
+        "/history             show conversation turns\n"
         "/clear               clear conversation history\n"
         "/memory              memory binding status\n"
         "/agent               agent binding status\n"
@@ -328,6 +387,10 @@ std::string GeniusShell::status_text() const {
     std::ostringstream out;
     out << "SPIRAL AI GENIUS / STATUS\n";
     out << "mode: " << shell_mode_name(current.mode) << '\n';
+    out << "GPT backend: " << gpt_backend_name(current.gpt_backend) << '\n';
+    out << "OpenAI GPT: " << (current.openai_platform_supported && current.openai_key_present ? "ready" : "not ready")
+        << " | model " << current.openai_model << '\n';
+    out << "local Spiral model: " << (current.model_loaded ? current.model_path : "NOT LOADED") << '\n';
     out << "gpu: " << (current.gpu_available ? "online" : "offline");
     if (current.gpu_available) {
         out << " (" << (current.gpu_hardware_accelerated ? "hardware" : "WARP") << ")\n";
@@ -336,13 +399,10 @@ std::string GeniusShell::status_text() const {
     } else {
         out << '\n';
     }
-    out << "language model: " << (current.model_loaded ? current.model_path : "NOT LOADED") << '\n';
     out << "conversation turns: " << current.conversation_turns << '\n';
-    out << "temperature: " << std::fixed << std::setprecision(2) << current.temperature << '\n';
-    out << "max new tokens: " << current.max_new_tokens << '\n';
-    out << "agent substrate: linked\n";
-    out << "media stack: linked\n";
-    out << "Spiral Units/runtime: linked";
+    out << "local temperature: " << std::fixed << std::setprecision(2) << current.temperature << '\n';
+    out << "local max new tokens: " << current.max_new_tokens << '\n';
+    out << "agent substrate: linked\nmedia stack: linked\nSpiral Units/runtime: linked";
     return out.str();
 }
 
@@ -350,6 +410,15 @@ std::string shell_mode_name(ShellMode mode) {
     switch (mode) {
         case ShellMode::Native: return "NATIVE";
         case ShellMode::Gpt: return "GPT";
+    }
+    return "UNKNOWN";
+}
+
+std::string gpt_backend_name(GptBackend backend) {
+    switch (backend) {
+        case GptBackend::Auto: return "AUTO";
+        case GptBackend::OpenAI: return "OPENAI";
+        case GptBackend::SpiralLocal: return "SPIRAL_LOCAL";
     }
     return "UNKNOWN";
 }
