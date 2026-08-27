@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(spiralos_ai_genius VERSION 0.0.26 LANGUAGES CXX)
+project(spiralos_ai_genius VERSION 0.0.27 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -66,6 +66,9 @@ endif()
 
 add_executable(spiral_genius apps/genius/main.cpp)
 target_link_libraries(spiral_genius PRIVATE spiral_core)
+
+add_executable(spiral_benchmark apps/benchmark/main.cpp)
+target_link_libraries(spiral_benchmark PRIVATE spiral_core)
 
 enable_testing()
 
@@ -168,3 +171,7 @@ add_test(NAME spiral_gpu_compute_tests COMMAND spiral_gpu_compute_tests)
 add_executable(spiral_genius_shell_tests tests/genius_shell_tests.cpp)
 target_link_libraries(spiral_genius_shell_tests PRIVATE spiral_core)
 add_test(NAME spiral_genius_shell_tests COMMAND spiral_genius_shell_tests)
+
+add_executable(spiral_performance_proof_tests tests/performance_proof_tests.cpp)
+target_link_libraries(spiral_performance_proof_tests PRIVATE spiral_core)
+add_test(NAME spiral_performance_proof_tests COMMAND spiral_performance_proof_tests)
