@@ -2,24 +2,23 @@
 
 Native, sovereign C++ intelligence infrastructure for SpiralOS, Hakui, EtherPlay, and future EtherTech systems.
 
-## Current rung: L20 — renderer + device bridge
+## Current rung: L21 — native visual self-test
 
-L0–L19 established Spiral-owned language, agents, multimodal generation, temporal media models, accelerated CPU execution, and the live Spiral Unit graph. L20 gives that live graph a deterministic screen/device contract without hardcoding one client renderer:
+L0–L20 established Spiral-owned language, agents, multimodal generation, temporal media models, accelerated CPU execution, the live Spiral Unit graph, deterministic layout, dirty rendering, and a hardware-neutral device contract. L21 adds a deterministic software framebuffer and the first native render → inspect → repair → rerender loop:
 
-- `render::LayoutEngine`: resolves validated Spiral Units into concrete clipped frame trees.
-- deterministic vertical flex layout plus `Grid` layout through a `columns` property; absolute children remain parent-relative and min/max constraints are honored.
-- `FrameTree::hit_test`: back-to-front interactive hit testing against resolved bounds and inherited clip rectangles.
-- `UnitRenderer`: host-neutral begin/draw/end rendering interface receiving the resolved frame tree, dirty regions, and optional native device binding.
-- `RendererBridge`: mounts a `UnitRuntime`, dispatches pointer events, recomputes layout, tracks dirty geometry/property changes, applies revisioned hot patches, resizes, and performs full redraws.
-- `HostSurfaceAdapter`: named adapter hook used by clients such as EtherPlay and Hakui to claim media/runtime component kinds without forking Spiral Units.
-- `device::Device`: native hardware-neutral buffer/upload/download/submit contract.
-- `device::CpuReferenceDevice`: real buffer storage plus validated fill/copy command execution used as the reference contract for later GPU implementations.
-- `device::CommandList` / `CommandQueue`: explicit queued device work with submission accounting.
-- `spiral_renderer_device_tests`: proves device buffer commands and bounds safety, deterministic grid/flex layout, hit testing, EtherPlay/Hakui adapter dispatch, event-driven dirty redraw, hot-layout propagation, stale/corrupt patch safety, resize/redraw, and renderer access to the native device.
+- `raster::Framebuffer`: owned RGBA8 pixels with checked access, region clears, stable 64-bit snapshot hashing, non-background accounting, and binary P6 PPM snapshot output.
+- `raster::SoftwareRenderer`: headless `UnitRenderer` implementation for containers/grids/canvas, text, buttons, deterministic image/video/avatar placeholders, audio surfaces, and waveform rendering.
+- dirty-region rendering preserves the L20 bridge contract: only invalidated regions are cleared and repainted.
+- built-in tiny 5x7 UI glyph rasterization keeps text snapshots deterministic without external font/runtime dependencies.
+- `visual::VisualCritic`: inspects the resolved frame tree and rendered pixels for undersized interactive targets, heavy clipping, and nearly blank frames.
+- `visual::RepairPolicy`: emits revision-safe `UnitPatch` repairs only for findings it knows how to fix; the first certified repair promotes undersized interactive controls to a 44x44 minimum.
+- `visual::VisualSelfTest`: executes inspect → patch → hot render → reinspect with bounded repair passes and preserves every report/snapshot hash.
+- `host::HostBridgeLog` plus `make_etherplay_adapter` / `make_hakui_adapter`: concrete presentation bridges that let EtherPlay and Hakui claim their supported runtime/media nodes through the same L20 adapter contract.
+- `spiral_visual_self_test_tests`: renders an intentionally flawed live Unit, saves/reads a real PPM snapshot, proves deterministic hashes, detects a 20x14 button, hot-repairs it to the configured minimum, verifies the framebuffer changes, dispatches a repaired button event, and requires the final critic report to be healthy.
 
-L20 deliberately does **not** claim a GPU kernel yet. The device/buffer/queue API and CPU reference implementation define the semantics that a later Direct3D/Vulkan/Metal-style Spiral backend must match. Likewise, the renderer is host-neutral: Hakui/SDL and EtherPlay native clients can now bind concrete drawing/media behavior without changing the Unit/agent/model layers.
+L21 is a real software rasterizer and self-test loop, but it deliberately does **not** claim a native OS window, SDL host, or GPU renderer. The framebuffer is headless so CI can certify exact cross-platform visual behavior first. Hakui/EtherPlay clients can consume the host bridge now; the next rung can bind a native window/GPU backend without changing the Unit, visual-critic, or repair contracts.
 
-No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, FFmpeg, libsndfile, Stable Diffusion/diffusion wrapper, pretrained-model runtime, vector database, external agent framework, hosted-model API, BLAS library, or external thread-pool runtime is required.
+No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, FFmpeg, libsndfile, Stable Diffusion/diffusion wrapper, pretrained-model runtime, vector database, external agent framework, hosted-model API, BLAS library, external font rasterizer, or external thread-pool runtime is required.
 
 ## Build
 
@@ -61,6 +60,8 @@ images/image_0002.ppm<TAB>a blue signal in fog
 - L18 ✅ native thread pool + aligned arena + SSE2/scalar kernels + parallel FP32 matmul + native INT8 matmul + compute backend + benchmark harness
 - L19 ✅ Spiral Unit graph + constraints + state + events + tool/agent actions + revisioned hot patching + media surfaces + compute routing + prompt-generation boundary
 - L20 ✅ deterministic layout + frame tree + hit testing + dirty redraw + host adapters + native device/buffer/command queue reference
-- L21 ⬜ concrete Hakui/EtherPlay host renderer + visual self-test/repair + first native GPU backend
+- L21 ✅ RGBA framebuffer + software rasterizer + PPM snapshots + snapshot hashing + visual critic + bounded hot-repair loop + EtherPlay/Hakui host bridges
+- L22 ⬜ native window host + first real GPU backend + GPU buffers/commands + raster presentation
+- L23 ⬜ GPU matmul/attention + heterogeneous model scheduling + visual AI self-repair in live hosts
 
 The rule is simple: external systems may be studied and benchmarked, but Spiral owns its core abstractions and can replace any optional dependency.
