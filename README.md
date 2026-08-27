@@ -2,24 +2,26 @@
 
 Native, sovereign C++ intelligence infrastructure for SpiralOS, Hakui, EtherPlay, and future EtherTech systems.
 
-## Current rung: L22 — native window + first real GPU backend
+## Current rung: L23 — GPU compute brain
 
-L0–L21 established Spiral-owned language, agents, multimodal generation, temporal media models, accelerated CPU execution, live Spiral Units, deterministic layout, software rasterization, and visual self-repair. L22 crosses the headless boundary on Windows with a real Win32/D3D11 execution path while preserving explicit unsupported behavior on other platforms:
+L0–L22 established Spiral-owned language, agents, multimodal generation, temporal media models, live Spiral Units, visual self-repair, accelerated CPU execution, a Win32 host, and a real D3D11 device/presentation path. L23 makes neural tensor math execute through native D3D11 compute shaders while retaining deterministic CPU fallback:
 
-- `gpu::D3D11GpuDevice`: implements the existing L20 `device::Device` contract with a native D3D11 device.
-- device creation tries `D3D_DRIVER_TYPE_HARDWARE` first and falls back to Microsoft WARP only when hardware D3D11 is unavailable; capabilities record whether the selected path is hardware-accelerated.
-- native D3D11 buffers use owned `ID3D11Buffer` resources with logical-vs-physical byte accounting and raw UAV capability.
-- uploads use `UpdateSubresource`; readback uses a staging buffer plus `Map`.
-- `CopyBuffer` executes through `ID3D11DeviceContext::CopySubresourceRegion`, including a temporary native resource for same-buffer overlap safety.
-- aligned `FillBuffer` regions execute through raw UAV `ClearUnorderedAccessViewUint`; unaligned edge bytes are handled with bounded uploads.
-- `host::NativeWindowHost`: owns a real Win32 `HWND`, UTF-8 title conversion, hidden/visible modes, resize, message pumping, and close state.
-- `gpu::D3D11FramebufferPresenter`: binds the existing D3D11 device to a DXGI swapchain and presents L21 RGBA8 framebuffer pixels directly to the native window backbuffer.
-- swapchain size tracks framebuffer size; presentation records frame count and the exact L21 snapshot hash being displayed.
-- `spiral_native_gpu_host_tests`: on Windows, requires D3D11 device creation, native GPU upload/fill/copy/readback, invalid-range rejection, hidden Win32 window creation, DXGI swapchain creation, and two framebuffer presents. On Ubuntu, the same suite requires the D3D11/Win32 path to report unsupported and reject creation cleanly.
+- `gpu::GpuTensor`: move-only RAII wrapper around Spiral GPU buffer handles plus tensor shape metadata.
+- `gpu::D3D11ComputeEngine`: shares the exact L22 D3D11 device/context and compiles native HLSL compute kernels at runtime with `D3DCompile`.
+- FP32 rank-2 matrix multiplication executes as an 8x8-thread-group D3D11 compute kernel over GPU-resident raw buffers.
+- ReLU and SiLU execute as 64-thread elementwise compute kernels.
+- row-wise LayerNorm executes on GPU with configurable epsilon.
+- numerically stable row-wise softmax executes on GPU using max subtraction before exponentiation.
+- tensor upload/readback counters plus dispatch counters make residency and transfer behavior observable.
+- GPU-resident chaining allows `upload → matmul → activation → download` without a CPU roundtrip between neural operations.
+- `gpu::HybridComputeBackend` implements the existing L18 `ComputeBackend` interface and selects GPU FP32 matmul above a configurable operation threshold, otherwise using the certified threaded CPU backend.
+- INT8 matmul intentionally remains on the existing CPU path at this rung rather than pretending a GPU quantized kernel exists.
+- Windows links `d3dcompiler` directly; no third-party GPU abstraction or shader runtime is required.
+- `spiral_gpu_compute_tests`: on Windows, requires numerical parity for GPU matmul, ReLU, SiLU, LayerNorm, and softmax; verifies resident multi-op execution and hybrid CPU/GPU routing. On Ubuntu, it requires explicit D3D11 unavailability and deterministic CPU fallback.
 
-L22 does **not** claim a Linux GPU backend, GPU neural-network kernel, or hardware acceleration on every Windows runner. Windows uses hardware D3D11 when available and WARP as an explicit compatibility fallback; the capability record distinguishes them. GPU matmul/attention and heterogeneous CPU/GPU scheduling belong to the next rung.
+L23 does **not** yet claim optimized tiled GEMM, fused transformer kernels, GPU attention, FP16/BF16 GPU arithmetic, or a Linux GPU backend. The first kernels prioritize correctness, inspectability, shared residency, and scheduler integration. L24 can build higher-throughput/tiled kernels and attention primitives on this certified substrate.
 
-No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, FFmpeg, libsndfile, Stable Diffusion/diffusion wrapper, pretrained-model runtime, vector database, external agent framework, hosted-model API, BLAS library, external font rasterizer, external thread-pool runtime, SDL renderer, or third-party GPU abstraction layer is required.
+No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, FFmpeg, libsndfile, Stable Diffusion wrapper, pretrained-model runtime, hosted-model API, BLAS library, external thread-pool runtime, SDL renderer, CUDA runtime, DirectML, or third-party GPU abstraction layer is required.
 
 ## Build
 
@@ -63,6 +65,7 @@ images/image_0002.ppm<TAB>a blue signal in fog
 - L20 ✅ deterministic layout + frame tree + hit testing + dirty redraw + host adapters + native device/buffer/command queue reference
 - L21 ✅ RGBA framebuffer + software rasterizer + PPM snapshots + snapshot hashing + visual critic + bounded hot-repair loop + EtherPlay/Hakui host bridges
 - L22 ✅ Win32 native host + D3D11 hardware/WARP discovery + native GPU buffers + GPU copy/fill + readback + DXGI framebuffer presentation
-- L23 ⬜ GPU matmul + GPU activation/normalization kernels + attention primitives + CPU/GPU scheduler + live-host visual self-repair loop
+- L23 ✅ GPU-resident tensors + HLSL FP32 matmul + ReLU/SiLU + LayerNorm + softmax + hybrid CPU/GPU scheduler
+- L24 ⬜ tiled GPU GEMM + batched matmul + Q/K/V projections + scaled-dot-product attention + fused transformer inference path
 
 The rule is simple: external systems may be studied and benchmarked, but Spiral owns its core abstractions and can replace any optional dependency.
