@@ -2,24 +2,23 @@
 
 Native, sovereign C++ intelligence infrastructure for SpiralOS, Hakui, EtherPlay, and future EtherTech systems.
 
-## Current rung: L8 — native vision foundation
+## Current rung: L9 — multimodal learning + first trained image generator
 
-L0 established Spiral-owned tensors/tokenization, L1–L5 built the language model, training, and generation stack, L6 added runtime memory/tools, and L7 added native orchestration. L8 gives Spiral its first owned visual representation and image-generation substrate:
+L0–L7 built Spiral's native language, training, runtime-memory, tool, and agent stack. L8 added owned RGB image representation, bidirectional vision encoding, cross-modal projection, and latent raster decoding. L9 adds the first visual learning path that can actually fit image data and condition generation on text:
 
-- `RgbImage`: owned RGB8 image storage with checked dimensions, pixel access, and native binary P6 PPM load/save without OpenCV, PIL, or another image runtime.
-- `image_to_tensor` / `tensor_to_image`: deterministic RGB8 ↔ normalized `[height,width,3]` SpiralTensor conversion.
-- `patchify`: native image-to-patch tokenization for vision-transformer inputs.
-- deterministic 2D sine/cosine positional encoding across image patch grids.
-- `VisionSelfAttention`: Spiral-owned bidirectional multi-head self-attention so every image patch can attend to every other patch rather than inheriting the language model's causal mask.
-- `VisionBlock`: pre-norm bidirectional attention + residual + gated feed-forward + residual.
-- `VisionEncoder`: patch projection, configurable vision-block stack, final normalization, per-patch visual embeddings, and pooled image embeddings.
-- `CrossModalProjector`: independent text and vision projections into a shared feature space for later multimodal alignment/training.
-- `LatentRasterDecoder`: trainable Spiral-owned latent-grid → RGB patch decoder plus deterministic Gaussian latent sampling; this is the first native image-generation substrate, not yet a trained text-to-image model.
-- `spiral_vision_tests`: validates PPM round-trip, tensor conversion, patch ordering, deterministic vision weights, bidirectional patch influence, pooled embeddings, cross-modal projection, deterministic latent sampling, and latent-to-RGB reconstruction.
+- `prompt_features`: deterministic native text conditioning vectors derived from prompt bytes without an external tokenizer/model runtime.
+- `ImageAutoencoder`: patch-space image encoder + latent representation + decoder using Spiral-owned trainable parameters.
+- `AutoencoderTrainer`: explicit MSE reverse pass through the patch encoder/decoder with Spiral AdamW and gradient clipping.
+- `PromptLatentGenerator`: text features plus normalized 2D patch coordinates → per-patch image latent predictions.
+- `PromptGeneratorTrainer`: learns prompt-to-latent mappings against frozen latents produced by the trained image encoder.
+- `SpiralImageGenerator`: prompt → learned latent grid → learned decoder → RGB image.
+- `mean_squared_error` and `cosine_similarity`: native multimodal loss/similarity primitives for reconstruction and later alignment work.
+- image bundles: native binary save/load for autoencoder + prompt generator configuration-compatible weights.
+- `spiral_multimodal_tests`: requires autoencoder reconstruction loss to fall substantially, requires prompt-latent loss to fall substantially, trains distinct `red signal` and `blue signal` outputs, verifies visible channel separation, and proves bundle reload reproduces generated pixels exactly.
 
-L8 deliberately distinguishes infrastructure from capability: the vision encoder and latent decoder are real native neural components, but their random initial weights do not yet constitute a useful trained image model. Future rungs can train/align them without replacing the owned runtime.
+L9 is intentionally a small, inspectable learned generator rather than a claim of frontier text-to-image quality. It proves the complete sovereign path `text → trained conditioning → trained latent → trained pixels`. A later rung can replace the linear latent predictor with deeper transformer/flow/denoising networks while preserving this owned data/training/runtime foundation.
 
-No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, diffusion wrapper, pretrained-model runtime, vector database, external agent framework, or hosted-model API is required.
+No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, Stable Diffusion/diffusion wrapper, pretrained-model runtime, vector database, external agent framework, or hosted-model API is required.
 
 ## Build
 
@@ -40,7 +39,7 @@ ctest --test-dir build -C Release --output-on-failure
 - L6 ✅ per-layer KV cache + incremental inference + model bundles + persistent memory + retrieval + native tool registry
 - L7 ✅ intent + task graph + memory injection + tool execution + critic + repair/retry + verification + traces + outcome memory
 - L8 ✅ native RGB images + patches + bidirectional vision transformer + cross-modal projection + latent raster decoder
-- L9 ⬜ multimodal training + image generation + video/audio + Spiral Units
-- L10 ⬜ integrated Spiral intelligence
+- L9 ✅ trainable image autoencoder + prompt-conditioned latent learning + native prompt-to-RGB generation + image bundles
+- L10 ⬜ deeper flow/denoising + audio/video + Spiral Units + integrated intelligence
 
 The rule is simple: external systems may be studied and benchmarked, but Spiral owns its core abstractions and can replace any optional dependency.
