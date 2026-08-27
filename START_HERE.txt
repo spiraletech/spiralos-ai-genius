@@ -1,0 +1,76 @@
+SPIRAL AI GENIUS / GPT MODE — WINDOWS x64
+==========================================
+
+Run:
+  spiral_genius.exe
+
+The shell starts in GPT MODE with backend AUTO.
+
+REAL GPT / OPENAI MODE
+----------------------
+Spiral reads the OpenAI API key ONLY from the Windows environment.
+Do not put your API key in a chat message, config file, or command inside Spiral.
+
+PowerShell, current window only:
+  $env:OPENAI_API_KEY="YOUR_KEY_HERE"
+  .\spiral_genius.exe
+
+Inside Spiral:
+  /openai
+  /backend openai
+
+Default OpenAI model:
+  gpt-5.6
+
+Change it inside Spiral if needed:
+  /gptmodel gpt-5.6
+
+AUTO backend behavior:
+  1. Use OpenAI GPT when OPENAI_API_KEY is present.
+  2. Otherwise use a loaded native Spiral model bundle.
+  3. If neither exists, say so explicitly instead of generating fake/random output.
+
+SOVEREIGN LOCAL MODE
+--------------------
+Inside Spiral:
+  /backend spiral
+  /load C:\path\to\your\model.bundle
+
+This uses the native Spiral language-model runtime and does not call OpenAI.
+A trained model bundle is not included in this ZIP.
+
+NATIVE SUBSTRATE MODE
+---------------------
+  /native
+
+Shows local runtime/GPU/model substrate behavior rather than conversational generation.
+Return to conversation mode with:
+  /gpt
+
+USEFUL COMMANDS
+---------------
+  /help
+  /status
+  /gpt
+  /native
+  /backend auto|openai|spiral
+  /openai
+  /gptmodel [model-id]
+  /gpu
+  /model
+  /load <bundle-path>
+  /unload
+  /history
+  /clear
+  /exit
+
+SECURITY / PRIVACY
+------------------
+- The executable never prints OPENAI_API_KEY.
+- OpenAI requests use HTTPS through native Windows WinHTTP.
+- The Responses API request uses store:false.
+- Local Spiral mode does not send prompts to OpenAI.
+
+BUILD NOTE
+----------
+This package contains the interactive shell, L23 D3D11 GPU compute stack, and the full native Spiral library lineage through L23.

@@ -1,24 +1,38 @@
-#include "spiral/tensor.hpp"
-#include "spiral/tokenizer.hpp"
+#include "spiral/genius_shell.hpp"
 
 #include <iostream>
 #include <string>
 
-int main() {
-    spiral::ByteTokenizer tokenizer;
-    const std::string seed = "Spiral awake";
-    const auto tokens = tokenizer.encode(seed);
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#endif
 
-    spiral::Tensor a({2, 2}, {1.0F, 2.0F, 3.0F, 4.0F});
-    spiral::Tensor b({2, 2}, {5.0F, 6.0F, 7.0F, 8.0F});
-    const auto product = a.matmul(b);
+int main(int argc, char** argv) {
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
 
-    std::cout << "SPIRAL-AI GENIUS / L0\n";
-    std::cout << "native C++ sovereign foundation online\n";
-    std::cout << "tokenizer vocab: " << spiral::ByteTokenizer::vocabulary_size << "\n";
-    std::cout << "seed tokens: " << tokens.size() << "\n";
-    std::cout << product.describe() << "\n";
-    std::cout << "matmul[0,0]: " << product.data().at(0) << "\n";
-    std::cout << "decoded: " << tokenizer.decode(tokens) << "\n";
+    spiral::genius::GeniusShell shell;
+
+    if (argc >= 3 && std::string(argv[1]) == "--model") {
+        std::string error;
+        if (!shell.load_model(argv[2], &error)) {
+            std::cerr << "MODEL LOAD FAILED: " << error << "\n";
+        }
+    }
+
+    std::cout << shell.banner_text() << "\n\n";
+    std::cout << shell.status_text() << "\n\n";
+
+    std::string line;
+    while (!shell.should_exit()) {
+        std::cout << '[' << spiral::genius::shell_mode_name(shell.mode()) << "] spiral> " << std::flush;
+        if (!std::getline(std::cin, line)) break;
+        const std::string response = shell.handle_line(line);
+        if (!response.empty()) std::cout << "\nspiral> " << response << "\n\n";
+    }
+
     return 0;
 }
