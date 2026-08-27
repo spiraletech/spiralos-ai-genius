@@ -1,6 +1,7 @@
 #include "spiral/openai_backend.hpp"
 
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <iomanip>
 #include <optional>
@@ -17,6 +18,8 @@
 
 namespace spiral::openai {
 namespace {
+
+#ifdef _WIN32
 
 std::string json_escape(std::string_view value) {
     std::ostringstream out;
@@ -163,8 +166,6 @@ std::string extract_error_message(std::string_view json) {
     return message.has_value() ? message->first : "OpenAI API returned an error response";
 }
 
-#ifdef _WIN32
-
 class InternetHandle final {
 public:
     InternetHandle() = default;
@@ -244,9 +245,13 @@ ResponseResult ResponsesBackend::respond(
         "\",\"instructions\":\"" + json_escape(instructions) +
         "\",\"input\":\"" + json_escape(input) +
         "\",\"store\":false}";
+    if (body.size() > static_cast<std::size_t>(0xFFFFFFFFU)) {
+        result.error = "OpenAI request body exceeds WinHTTP DWORD limit";
+        return result;
+    }
 
     InternetHandle session(WinHttpOpen(
-        L"SpiralOS-AI-Genius/0.0.25",
+        L"SpiralOS-AI-Genius/0.0.26",
         WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
         WINHTTP_NO_PROXY_NAME,
         WINHTTP_NO_PROXY_BYPASS,
@@ -283,13 +288,14 @@ ResponseResult ResponsesBackend::respond(
         return result;
     }
 
+    const DWORD body_size = static_cast<DWORD>(body.size());
     if (!WinHttpSendRequest(
             request.get(),
             WINHTTP_NO_ADDITIONAL_HEADERS,
             0,
             const_cast<char*>(body.data()),
-            static_cast<DWORD>(body.size()),
-            static_cast<DWORD>(body.size()),
+            body_size,
+            body_size,
             0)) {
         result.error = winhttp_error("WinHttpSendRequest");
         return result;
