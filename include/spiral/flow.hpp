@@ -37,6 +37,23 @@ private:
 [[nodiscard]] Tensor gaussian_noise(const std::vector<std::size_t>& shape, Random& rng);
 [[nodiscard]] Tensor guided_prediction(const Tensor& unconditional, const Tensor& conditional, float guidance_scale);
 
+struct LatentPredictorConfig {
+    std::size_t latent_dim = 0;
+};
+
+class LatentPredictor {
+public:
+    virtual ~LatentPredictor() = default;
+    [[nodiscard]] virtual std::size_t latent_dim() const noexcept = 0;
+    [[nodiscard]] LatentPredictorConfig config() const noexcept { return {latent_dim()}; }
+    [[nodiscard]] virtual Tensor predict(
+        const Tensor& noisy_latent,
+        std::string_view prompt,
+        float time,
+        std::size_t grid_height,
+        std::size_t grid_width) const = 0;
+};
+
 struct DenoiserConfig {
     std::size_t text_feature_dim = 32;
     std::size_t latent_dim = 8;
@@ -44,16 +61,17 @@ struct DenoiserConfig {
     std::size_t hidden_dim = 64;
 };
 
-class LatentDenoiser final {
+class LatentDenoiser final : public LatentPredictor {
 public:
     LatentDenoiser(DenoiserConfig config, Random& rng);
 
+    [[nodiscard]] std::size_t latent_dim() const noexcept override { return config_.latent_dim; }
     [[nodiscard]] Tensor predict(
         const Tensor& noisy_latent,
         std::string_view prompt,
         float time,
         std::size_t grid_height,
-        std::size_t grid_width) const;
+        std::size_t grid_width) const override;
 
     [[nodiscard]] std::vector<nn::Parameter*> parameters();
     [[nodiscard]] std::vector<const nn::Parameter*> parameters() const;
@@ -119,7 +137,7 @@ class IterativeImageGenerator final {
 public:
     IterativeImageGenerator(
         multimodal::ImageAutoencoder& autoencoder,
-        LatentDenoiser& denoiser,
+        LatentPredictor& denoiser,
         NoiseScheduler scheduler = NoiseScheduler{})
         : autoencoder_(autoencoder), denoiser_(denoiser), scheduler_(scheduler) {}
 
@@ -160,7 +178,7 @@ private:
         const Tensor* patch_mask = nullptr) const;
 
     multimodal::ImageAutoencoder& autoencoder_;
-    LatentDenoiser& denoiser_;
+    LatentPredictor& denoiser_;
     NoiseScheduler scheduler_;
 };
 
