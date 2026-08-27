@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(spiralos_ai_genius VERSION 0.0.22 LANGUAGES CXX)
+project(spiralos_ai_genius VERSION 0.0.23 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -44,11 +44,17 @@ add_library(spiral_core STATIC
     src/raster.cpp
     src/visual_self_test.cpp
     src/host_bridge.cpp
+    src/gpu.cpp
+    src/native_host.cpp
 )
 
 target_include_directories(spiral_core PUBLIC include)
 target_compile_features(spiral_core PUBLIC cxx_std_20)
 target_link_libraries(spiral_core PUBLIC Threads::Threads)
+
+if(WIN32)
+    target_link_libraries(spiral_core PUBLIC d3d11 dxgi)
+endif()
 
 if(MSVC)
     target_compile_options(spiral_core PRIVATE /W4 /permissive-)
@@ -148,3 +154,7 @@ add_test(NAME spiral_renderer_device_tests COMMAND spiral_renderer_device_tests)
 add_executable(spiral_visual_self_test_tests tests/visual_self_test_tests.cpp)
 target_link_libraries(spiral_visual_self_test_tests PRIVATE spiral_core)
 add_test(NAME spiral_visual_self_test_tests COMMAND spiral_visual_self_test_tests)
+
+add_executable(spiral_native_gpu_host_tests tests/native_gpu_host_tests.cpp)
+target_link_libraries(spiral_native_gpu_host_tests PRIVATE spiral_core)
+add_test(NAME spiral_native_gpu_host_tests COMMAND spiral_native_gpu_host_tests)

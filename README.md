@@ -2,23 +2,24 @@
 
 Native, sovereign C++ intelligence infrastructure for SpiralOS, Hakui, EtherPlay, and future EtherTech systems.
 
-## Current rung: L21 — native visual self-test
+## Current rung: L22 — native window + first real GPU backend
 
-L0–L20 established Spiral-owned language, agents, multimodal generation, temporal media models, accelerated CPU execution, the live Spiral Unit graph, deterministic layout, dirty rendering, and a hardware-neutral device contract. L21 adds a deterministic software framebuffer and the first native render → inspect → repair → rerender loop:
+L0–L21 established Spiral-owned language, agents, multimodal generation, temporal media models, accelerated CPU execution, live Spiral Units, deterministic layout, software rasterization, and visual self-repair. L22 crosses the headless boundary on Windows with a real Win32/D3D11 execution path while preserving explicit unsupported behavior on other platforms:
 
-- `raster::Framebuffer`: owned RGBA8 pixels with checked access, region clears, stable 64-bit snapshot hashing, non-background accounting, and binary P6 PPM snapshot output.
-- `raster::SoftwareRenderer`: headless `UnitRenderer` implementation for containers/grids/canvas, text, buttons, deterministic image/video/avatar placeholders, audio surfaces, and waveform rendering.
-- dirty-region rendering preserves the L20 bridge contract: only invalidated regions are cleared and repainted.
-- built-in tiny 5x7 UI glyph rasterization keeps text snapshots deterministic without external font/runtime dependencies.
-- `visual::VisualCritic`: inspects the resolved frame tree and rendered pixels for undersized interactive targets, heavy clipping, and nearly blank frames.
-- `visual::RepairPolicy`: emits revision-safe `UnitPatch` repairs only for findings it knows how to fix; the first certified repair promotes undersized interactive controls to a 44x44 minimum.
-- `visual::VisualSelfTest`: executes inspect → patch → hot render → reinspect with bounded repair passes and preserves every report/snapshot hash.
-- `host::HostBridgeLog` plus `make_etherplay_adapter` / `make_hakui_adapter`: concrete presentation bridges that let EtherPlay and Hakui claim their supported runtime/media nodes through the same L20 adapter contract.
-- `spiral_visual_self_test_tests`: renders an intentionally flawed live Unit, saves/reads a real PPM snapshot, proves deterministic hashes, detects a 20x14 button, hot-repairs it to the configured minimum, verifies the framebuffer changes, dispatches a repaired button event, and requires the final critic report to be healthy.
+- `gpu::D3D11GpuDevice`: implements the existing L20 `device::Device` contract with a native D3D11 device.
+- device creation tries `D3D_DRIVER_TYPE_HARDWARE` first and falls back to Microsoft WARP only when hardware D3D11 is unavailable; capabilities record whether the selected path is hardware-accelerated.
+- native D3D11 buffers use owned `ID3D11Buffer` resources with logical-vs-physical byte accounting and raw UAV capability.
+- uploads use `UpdateSubresource`; readback uses a staging buffer plus `Map`.
+- `CopyBuffer` executes through `ID3D11DeviceContext::CopySubresourceRegion`, including a temporary native resource for same-buffer overlap safety.
+- aligned `FillBuffer` regions execute through raw UAV `ClearUnorderedAccessViewUint`; unaligned edge bytes are handled with bounded uploads.
+- `host::NativeWindowHost`: owns a real Win32 `HWND`, UTF-8 title conversion, hidden/visible modes, resize, message pumping, and close state.
+- `gpu::D3D11FramebufferPresenter`: binds the existing D3D11 device to a DXGI swapchain and presents L21 RGBA8 framebuffer pixels directly to the native window backbuffer.
+- swapchain size tracks framebuffer size; presentation records frame count and the exact L21 snapshot hash being displayed.
+- `spiral_native_gpu_host_tests`: on Windows, requires D3D11 device creation, native GPU upload/fill/copy/readback, invalid-range rejection, hidden Win32 window creation, DXGI swapchain creation, and two framebuffer presents. On Ubuntu, the same suite requires the D3D11/Win32 path to report unsupported and reject creation cleanly.
 
-L21 is a real software rasterizer and self-test loop, but it deliberately does **not** claim a native OS window, SDL host, or GPU renderer. The framebuffer is headless so CI can certify exact cross-platform visual behavior first. Hakui/EtherPlay clients can consume the host bridge now; the next rung can bind a native window/GPU backend without changing the Unit, visual-critic, or repair contracts.
+L22 does **not** claim a Linux GPU backend, GPU neural-network kernel, or hardware acceleration on every Windows runner. Windows uses hardware D3D11 when available and WARP as an explicit compatibility fallback; the capability record distinguishes them. GPU matmul/attention and heterogeneous CPU/GPU scheduling belong to the next rung.
 
-No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, FFmpeg, libsndfile, Stable Diffusion/diffusion wrapper, pretrained-model runtime, vector database, external agent framework, hosted-model API, BLAS library, external font rasterizer, or external thread-pool runtime is required.
+No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, FFmpeg, libsndfile, Stable Diffusion/diffusion wrapper, pretrained-model runtime, vector database, external agent framework, hosted-model API, BLAS library, external font rasterizer, external thread-pool runtime, SDL renderer, or third-party GPU abstraction layer is required.
 
 ## Build
 
@@ -61,7 +62,7 @@ images/image_0002.ppm<TAB>a blue signal in fog
 - L19 ✅ Spiral Unit graph + constraints + state + events + tool/agent actions + revisioned hot patching + media surfaces + compute routing + prompt-generation boundary
 - L20 ✅ deterministic layout + frame tree + hit testing + dirty redraw + host adapters + native device/buffer/command queue reference
 - L21 ✅ RGBA framebuffer + software rasterizer + PPM snapshots + snapshot hashing + visual critic + bounded hot-repair loop + EtherPlay/Hakui host bridges
-- L22 ⬜ native window host + first real GPU backend + GPU buffers/commands + raster presentation
-- L23 ⬜ GPU matmul/attention + heterogeneous model scheduling + visual AI self-repair in live hosts
+- L22 ✅ Win32 native host + D3D11 hardware/WARP discovery + native GPU buffers + GPU copy/fill + readback + DXGI framebuffer presentation
+- L23 ⬜ GPU matmul + GPU activation/normalization kernels + attention primitives + CPU/GPU scheduler + live-host visual self-repair loop
 
 The rule is simple: external systems may be studied and benchmarked, but Spiral owns its core abstractions and can replace any optional dependency.
