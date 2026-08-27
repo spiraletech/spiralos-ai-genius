@@ -2,22 +2,24 @@
 
 Native, sovereign C++ intelligence infrastructure for SpiralOS, Hakui, EtherPlay, and future EtherTech systems.
 
-## Current rung: L6 — runtime intelligence
+## Current rung: L7 — native agent brain
 
-L0 established Spiral-owned tensors and tokenization. L1 added neural layers. L2 added causal attention. L3 assembled the language model. L4 added native training. L5 added autoregressive decoding. L6 makes the model fast enough to keep state and gives it the first persistent intelligence substrate:
+L0 established Spiral-owned tensors and tokenization. L1 added neural layers. L2 added causal attention. L3 assembled the language model. L4 added native training. L5 added decoding. L6 added incremental inference, memory, retrieval, and tools. L7 turns those capabilities into an explicit execution architecture:
 
-- `InferenceSession`: true one-token incremental model execution using a per-layer K/V cache rather than re-running the full prefix for every token.
-- cached Q/K/V execution preserves the exact current transformer math: per-head RoPE at the token position, scaled dot-product attention over cached keys/values, residuals, RMSNorm, gated feed-forward, final norm, and vocabulary logits.
-- cache reset/prefill APIs provide a correctness-preserving rebuild path when a bounded context window drops old tokens.
-- `LayerKVCache`: explicit Spiral-owned key/value storage and token-count inspection per transformer layer.
-- model bundles: one native binary artifact containing `ModelConfig` plus validated parameter shapes/data, allowing a model to be reconstructed without a separately hard-coded architecture config.
-- `MemoryStore`: owned persistent memory records, binary save/load, tags, stable IDs, and deterministic lexical cosine retrieval.
-- `ToolRegistry`: named native tools with descriptions, callbacks, controlled failures, duplicate protection, enumeration, and invocation.
-- `spiral_runtime_tests`: compares incremental-cache logits against full-context logits, verifies cache growth, round-trips a model bundle, persists/retrieves memory, and validates tool dispatch.
+- `IntentParser`: deterministic intent classification plus discovery of candidate native tools from the current registry.
+- `TaskGraph`: dependency-aware task nodes with duplicate-ID, unknown-dependency, self-dependency, and cycle validation.
+- `AgentContext`: injects the current goal, parsed intent, retrieved persistent memories, and available tool descriptions into planning policy.
+- `AgentEngine`: plan → execute → critique → repair/retry → verify → remember loop with bounded attempts per task.
+- planner, critic, and repair policies are injectable native interfaces. Deterministic fallback policies work today; future Spiral language models can occupy these policy slots without replacing the orchestration engine.
+- dependency failures skip downstream tasks rather than executing invalid work.
+- successful tool calls can still be rejected by the critic, forcing a repaired attempt rather than treating API success as semantic success.
+- `TraceEvent`: ordered intent, memory, planning, execution, critic, repair, skip, verification, and outcome-memory events for every run.
+- successful and failed agent outcomes can be written back into `MemoryStore` as episodic records for later retrieval/evaluation.
+- `spiral_agent_tests`: validates memory injection, deterministic tool planning, multi-step output chaining, critic-triggered repair, retry accounting, outcome memory, task-cycle rejection, and graceful no-action failure.
 
-The L5 generation API remains valid. Full-context generation is still available as the reference path while `InferenceSession` becomes the native fast path; bounded-window generation can rebuild the cache only when trimming changes positional semantics.
+L7 does not claim that the current tiny/random model is already a capable planner. Instead, it establishes the owned agent architecture and explicit policy boundaries required to plug trained Spiral models into planning and criticism later without turning the runtime into a model-specific wrapper.
 
-No llama.cpp, PyTorch, TensorFlow, vector database, pretrained-model runtime, or hosted-model API is required.
+No llama.cpp, PyTorch, TensorFlow, external agent framework, vector database, pretrained-model runtime, or hosted-model API is required.
 
 ## Build
 
@@ -36,7 +38,7 @@ ctest --test-dir build -C Release --output-on-failure
 - L4 ✅ gradients + reverse-mode backprop + cross-entropy + AdamW + training + checkpoints
 - L5 ✅ temperature/top-k/top-p + repetition control + bounded context + streaming native generation
 - L6 ✅ per-layer KV cache + incremental inference + model bundles + persistent memory + retrieval + native tool registry
-- L7 ⬜ agents + planning + verification + repair loops
+- L7 ✅ intent + task graph + memory injection + tool execution + critic + repair/retry + verification + traces + outcome memory
 - L8 ⬜ vision + image generation
 - L9 ⬜ video/audio + Spiral Units
 - L10 ⬜ integrated Spiral intelligence
