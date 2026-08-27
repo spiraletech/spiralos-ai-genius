@@ -2,21 +2,23 @@
 
 Native, sovereign C++ intelligence infrastructure for SpiralOS, Hakui, EtherPlay, and future EtherTech systems.
 
-## Current rung: L18 — native accelerated compute
+## Current rung: L19 — Spiral Units unified runtime
 
-L0–L17 established Spiral-owned language, agents, multimodal generation, temporal learning, media decoders, and prompt-conditioned audio/video latent flow. L18 adds the first explicit execution backend so those models no longer have to treat the original scalar Tensor implementation as the only compute path:
+L0–L18 established Spiral-owned language, agents, multimodal generation, temporal learning, media decoders, prompt-conditioned media flow, and accelerated CPU execution. L19 adds the live application/world representation that lets those subsystems operate through one common runtime instead of remaining isolated libraries:
 
-- `compute::ThreadPool`: persistent native worker threads, queued futures, and deterministic chunked `parallel_for`.
-- `compute::ScratchArena`: aligned bump allocation for temporary kernel memory with reset/high-watermark accounting.
-- SSE2 four-wide FP32 dot products on supported x86/x64 targets with a portable scalar fallback.
-- `parallel_matmul`: RHS-transposed contiguous dot kernels distributed across worker threads.
-- native symmetric INT8 matrix multiplication with int32 accumulation and quantization-scale restoration; it does not dequantize the full operands before multiplying.
-- `ComputeBackend`: hardware-independent execution contract for matmul and quantized matmul.
-- `CpuBackend`: threshold-based scalar/threaded dispatch and explicit SIMD backend identity.
-- `benchmark`: steady-clock benchmark harness for local kernel measurements without encoding unstable CI speed claims into tests.
-- `spiral_compute_tests`: proves multiple worker threads execute work, aligned scratch allocation/reset, SIMD/scalar dot equivalence, threaded FP32 matmul equivalence, INT8 accuracy bounds, backend polymorphism, and benchmark operation.
+- `units::SpiralUnit`: deterministic component/state document with stable component IDs, explicit roots/children, layout constraints, properties, media surfaces, and event bindings.
+- `ComponentKind`: container/text/button plus image, audio, video, waveform, canvas, grid, avatar, and custom runtime nodes.
+- strict structural validation: unique IDs, valid roots/children, finite layout values, reachability, duplicate-child rejection, and cycle detection.
+- `UnitPatch`: revision-checked hot patch operations for components, roots, state, and properties.
+- copy → patch → validate → commit semantics: stale or structurally invalid patches cannot partially corrupt the live unit.
+- event actions: set state, set another component property, invoke `ToolRegistry`, invoke `AgentEngine`, and emit application events.
+- `$payload` and `$state.<key>` value resolution for event-driven live data flow.
+- `UnitRuntime::matmul`: compute-bound execution through L18 `ComputeBackend`, with the original Tensor path as a portable fallback.
+- `UnitGenerator`: pluggable prompt → `SpiralUnit` generation boundary; generated units must pass the same native validator before becoming live.
+- explicit image/audio/video/waveform surface kinds establish the renderer/media integration contract without pretending Hakui or EtherPlay rendering code already lives in this repository.
+- `spiral_units_tests`: proves live state/property mutation, tool and agent execution, emitted events, compute routing, hot patching, stale patch rejection, invalid-patch rollback, prompt-generated unit loading, media surface identity, and graph-cycle rejection.
 
-L18 deliberately does **not** claim a native GPU kernel yet. `ComputeBackend` is the boundary that future Spiral GPU backends will implement; this rung certifies the threaded/SIMD/quantized CPU reference first so later accelerators have an exact numerical contract to beat without changing model code.
+L19 is the convergence/runtime-schema rung, not a finished visual renderer. It gives Hakui, EtherPlay, and future SpiralOS clients one stable executable document and event model to render and control. The next integration work can bind these nodes to SDL/Hakui widgets, EtherPlay audio/video surfaces, or a future GPU renderer without changing the AI/agent/unit contract.
 
 No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, FFmpeg, libsndfile, Stable Diffusion/diffusion wrapper, pretrained-model runtime, vector database, external agent framework, hosted-model API, BLAS library, or external thread-pool runtime is required.
 
@@ -58,7 +60,8 @@ images/image_0002.ppm<TAB>a blue signal in fog
 - L16 ✅ complex/phase-preserving audio + learned complex codec + frame embedding decoder + temporal audio→PCM + temporal embeddings→RGB
 - L17 ✅ learned prompt-temporal conditioning + sequence denoising + temporal consistency + prompt→PCM + prompt→RGB + media-flow checkpoints
 - L18 ✅ native thread pool + aligned arena + SSE2/scalar kernels + parallel FP32 matmul + native INT8 matmul + compute backend + benchmark harness
-- L19 ⬜ Spiral Units + unified multimodal runtime + compute-backed model execution
-- L20 ⬜ native GPU kernels + device memory + serious heterogeneous scaling
+- L19 ✅ Spiral Unit graph + constraints + state + events + tool/agent actions + revisioned hot patching + media surfaces + compute routing + prompt-generation boundary
+- L20 ⬜ renderer bridges + native GPU device/buffer/queue contract + first GPU kernels
+- L21 ⬜ full Hakui/EtherPlay/SpiralOS live Unit host + visual self-test/repair loop
 
 The rule is simple: external systems may be studied and benchmarked, but Spiral owns its core abstractions and can replace any optional dependency.
