@@ -16,6 +16,10 @@ struct Parameter {
     std::string name;
     Tensor value;
     bool trainable = true;
+    Tensor grad;
+
+    void ensure_grad();
+    void zero_grad();
 };
 
 class Module {
@@ -32,8 +36,13 @@ public:
     [[nodiscard]] Tensor forward(const Tensor& input) const override;
     [[nodiscard]] std::vector<Parameter*> parameters() override;
     [[nodiscard]] std::vector<const Parameter*> parameters() const override;
+    [[nodiscard]] Parameter& weight() noexcept { return weight_; }
     [[nodiscard]] const Parameter& weight() const noexcept { return weight_; }
+    [[nodiscard]] Parameter& bias() noexcept { return bias_; }
     [[nodiscard]] const Parameter& bias() const noexcept { return bias_; }
+    [[nodiscard]] std::size_t in_features() const noexcept { return in_features_; }
+    [[nodiscard]] std::size_t out_features() const noexcept { return out_features_; }
+    [[nodiscard]] bool uses_bias() const noexcept { return use_bias_; }
 
 private:
     std::size_t in_features_;
@@ -62,6 +71,10 @@ public:
     [[nodiscard]] Tensor forward(const Tensor& input) const override;
     [[nodiscard]] std::vector<Parameter*> parameters() override;
     [[nodiscard]] std::vector<const Parameter*> parameters() const override;
+    [[nodiscard]] Parameter& scale() noexcept { return scale_; }
+    [[nodiscard]] const Parameter& scale() const noexcept { return scale_; }
+    [[nodiscard]] std::size_t feature_size() const noexcept { return feature_size_; }
+    [[nodiscard]] float epsilon() const noexcept { return epsilon_; }
 
 private:
     std::size_t feature_size_;

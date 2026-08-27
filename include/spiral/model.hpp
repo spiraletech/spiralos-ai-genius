@@ -33,6 +33,12 @@ public:
     [[nodiscard]] Tensor forward(const Tensor& input) const override;
     [[nodiscard]] std::vector<Parameter*> parameters() override;
     [[nodiscard]] std::vector<const Parameter*> parameters() const override;
+    [[nodiscard]] Linear& gate_proj() noexcept { return gate_proj_; }
+    [[nodiscard]] const Linear& gate_proj() const noexcept { return gate_proj_; }
+    [[nodiscard]] Linear& up_proj() noexcept { return up_proj_; }
+    [[nodiscard]] const Linear& up_proj() const noexcept { return up_proj_; }
+    [[nodiscard]] Linear& down_proj() noexcept { return down_proj_; }
+    [[nodiscard]] const Linear& down_proj() const noexcept { return down_proj_; }
 
 private:
     Linear gate_proj_;
@@ -52,6 +58,14 @@ public:
     [[nodiscard]] Tensor forward(const Tensor& input) const override;
     [[nodiscard]] std::vector<Parameter*> parameters() override;
     [[nodiscard]] std::vector<const Parameter*> parameters() const override;
+    [[nodiscard]] RMSNorm& attention_norm() noexcept { return attention_norm_; }
+    [[nodiscard]] const RMSNorm& attention_norm() const noexcept { return attention_norm_; }
+    [[nodiscard]] CausalSelfAttention& attention() noexcept { return attention_; }
+    [[nodiscard]] const CausalSelfAttention& attention() const noexcept { return attention_; }
+    [[nodiscard]] RMSNorm& feed_forward_norm() noexcept { return feed_forward_norm_; }
+    [[nodiscard]] const RMSNorm& feed_forward_norm() const noexcept { return feed_forward_norm_; }
+    [[nodiscard]] GatedFeedForward& feed_forward() noexcept { return feed_forward_; }
+    [[nodiscard]] const GatedFeedForward& feed_forward() const noexcept { return feed_forward_; }
 
 private:
     RMSNorm attention_norm_;
@@ -72,6 +86,14 @@ public:
 
     [[nodiscard]] const ModelConfig& config() const noexcept { return config_; }
     [[nodiscard]] std::size_t parameter_count() const;
+    [[nodiscard]] Embedding& token_embedding() noexcept { return token_embedding_; }
+    [[nodiscard]] const Embedding& token_embedding() const noexcept { return token_embedding_; }
+    [[nodiscard]] std::vector<std::unique_ptr<TransformerBlock>>& blocks() noexcept { return blocks_; }
+    [[nodiscard]] const std::vector<std::unique_ptr<TransformerBlock>>& blocks() const noexcept { return blocks_; }
+    [[nodiscard]] RMSNorm& final_norm() noexcept { return final_norm_; }
+    [[nodiscard]] const RMSNorm& final_norm() const noexcept { return final_norm_; }
+    [[nodiscard]] Linear& lm_head() noexcept { return lm_head_; }
+    [[nodiscard]] const Linear& lm_head() const noexcept { return lm_head_; }
 
 private:
     ModelConfig config_;

@@ -1,5 +1,6 @@
 #include "spiral/nn.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
@@ -21,6 +22,17 @@ std::size_t outer_rows(const Tensor& input, std::size_t feature_size) {
 
 } // namespace
 
+void Parameter::ensure_grad() {
+    if (grad.shape() != value.shape()) {
+        grad = Tensor::zeros(value.shape());
+    }
+}
+
+void Parameter::zero_grad() {
+    ensure_grad();
+    std::fill(grad.data().begin(), grad.data().end(), 0.0F);
+}
+
 std::vector<Parameter*> Module::parameters() { return {}; }
 std::vector<const Parameter*> Module::parameters() const { return {}; }
 
@@ -28,8 +40,8 @@ Linear::Linear(std::size_t in_features, std::size_t out_features, Random& rng, b
     : in_features_(in_features),
       out_features_(out_features),
       use_bias_(use_bias),
-      weight_{"weight", Tensor({in_features, out_features}), true},
-      bias_{"bias", Tensor({out_features}), use_bias} {
+      weight_{"weight", Tensor({in_features, out_features}), true, Tensor{}},
+      bias_{"bias", Tensor({out_features}), use_bias, Tensor{}} {
     if (in_features == 0 || out_features == 0) {
         throw std::invalid_argument("Linear dimensions must be non-zero");
     }
@@ -79,7 +91,7 @@ std::vector<const Parameter*> Linear::parameters() const {
 Embedding::Embedding(std::size_t vocabulary_size, std::size_t embedding_dim, Random& rng)
     : vocabulary_size_(vocabulary_size),
       embedding_dim_(embedding_dim),
-      table_{"embedding", Tensor({vocabulary_size, embedding_dim}), true} {
+      table_{"embedding", Tensor({vocabulary_size, embedding_dim}), true, Tensor{}} {
     if (vocabulary_size == 0 || embedding_dim == 0) {
         throw std::invalid_argument("Embedding dimensions must be non-zero");
     }
@@ -103,7 +115,7 @@ Tensor Embedding::forward(std::span<const std::uint32_t> token_ids) const {
 }
 
 RMSNorm::RMSNorm(std::size_t feature_size, float epsilon)
-    : feature_size_(feature_size), epsilon_(epsilon), scale_{"scale", Tensor::ones({feature_size}), true} {
+    : feature_size_(feature_size), epsilon_(epsilon), scale_{"scale", Tensor::ones({feature_size}), true, Tensor{}} {
     if (feature_size == 0 || epsilon <= 0.0F) {
         throw std::invalid_argument("RMSNorm requires positive feature size and epsilon");
     }
@@ -135,8 +147,8 @@ std::vector<const Parameter*> RMSNorm::parameters() const { return {&scale_}; }
 
 LayerNorm::LayerNorm(std::size_t feature_size, float epsilon)
     : feature_size_(feature_size), epsilon_(epsilon),
-      scale_{"scale", Tensor::ones({feature_size}), true},
-      bias_{"bias", Tensor::zeros({feature_size}), true} {
+      scale_{"scale", Tensor::ones({feature_size}), true, Tensor{}},
+      bias_{"bias", Tensor::zeros({feature_size}), true, Tensor{}} {
     if (feature_size == 0 || epsilon <= 0.0F) {
         throw std::invalid_argument("LayerNorm requires positive feature size and epsilon");
     }

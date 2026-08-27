@@ -26,6 +26,14 @@ public:
     [[nodiscard]] std::size_t model_dim() const noexcept { return model_dim_; }
     [[nodiscard]] std::size_t num_heads() const noexcept { return num_heads_; }
     [[nodiscard]] std::size_t head_dim() const noexcept { return head_dim_; }
+    [[nodiscard]] Linear& q_proj() noexcept { return q_proj_; }
+    [[nodiscard]] const Linear& q_proj() const noexcept { return q_proj_; }
+    [[nodiscard]] Linear& k_proj() noexcept { return k_proj_; }
+    [[nodiscard]] const Linear& k_proj() const noexcept { return k_proj_; }
+    [[nodiscard]] Linear& v_proj() noexcept { return v_proj_; }
+    [[nodiscard]] const Linear& v_proj() const noexcept { return v_proj_; }
+    [[nodiscard]] Linear& out_proj() noexcept { return out_proj_; }
+    [[nodiscard]] const Linear& out_proj() const noexcept { return out_proj_; }
 
 private:
     [[nodiscard]] Tensor split_heads(const Tensor& projected) const;
