@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(spiralos_ai_genius VERSION 0.0.3 LANGUAGES CXX)
+project(spiralos_ai_genius VERSION 0.0.4 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,6 +12,7 @@ add_library(spiral_core STATIC
     src/nn.cpp
     src/tensor_ops.cpp
     src/attention.cpp
+    src/model.cpp
 )
 
 target_include_directories(spiral_core PUBLIC include)
@@ -39,3 +40,7 @@ add_test(NAME spiral_nn_tests COMMAND spiral_nn_tests)
 add_executable(spiral_attention_tests tests/attention_tests.cpp)
 target_link_libraries(spiral_attention_tests PRIVATE spiral_core)
 add_test(NAME spiral_attention_tests COMMAND spiral_attention_tests)
+
+add_executable(spiral_model_tests tests/model_tests.cpp)
+target_link_libraries(spiral_model_tests PRIVATE spiral_core)
+add_test(NAME spiral_model_tests COMMAND spiral_model_tests)
