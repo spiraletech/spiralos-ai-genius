@@ -2,24 +2,23 @@
 
 Native, sovereign C++ intelligence infrastructure for SpiralOS, Hakui, EtherPlay, and future EtherTech systems.
 
-## Current rung: L17 — prompt-conditioned temporal media flow
+## Current rung: L18 — native accelerated compute
 
-L0–L16 established Spiral-owned language, agents, vision, image generation, scalable training, phase-preserving audio, causal temporal prediction, and learned PCM/RGB media decoders. L17 removes the seed-clip requirement by learning prompt-conditioned latent timelines directly from noise:
+L0–L17 established Spiral-owned language, agents, multimodal generation, temporal learning, media decoders, and prompt-conditioned audio/video latent flow. L18 adds the first explicit execution backend so those models no longer have to treat the original scalar Tensor implementation as the only compute path:
 
-- `media_flow::PromptTemporalFlowModel`: noisy sequence + global sequence state + prompt features + temporal position + diffusion time → predicted clean latent timeline.
-- learned prompt conditioning through trainable projections rather than fixed prompt bias.
-- sequence-level coupling through the global noisy-state feature.
-- temporal consistency loss on adjacent latent deltas.
-- `PromptTemporalFlowTrainer`: native AdamW training across multiple noise levels with explicit Linear/SiLU backward.
-- iterative seeded denoising with classifier-free-style unconditional/conditional guidance.
-- `PromptAudioGenerator`: prompt → complex-audio latent sequence → L16 complex decoder → inverse STFT → PCM.
-- `PromptVideoGenerator`: prompt → frame-embedding timeline → L16 frame decoder → RGB frames.
-- native prompt-media-flow checkpoint save/load with architecture validation.
-- `spiral_media_flow_tests`: requires two prompt trajectories to learn separately, deterministic same-seed sampling, prompt separation, checkpoint-exact reload, prompt→PCM generation, and prompt→RGB-frame generation.
+- `compute::ThreadPool`: persistent native worker threads, queued futures, and deterministic chunked `parallel_for`.
+- `compute::ScratchArena`: aligned bump allocation for temporary kernel memory with reset/high-watermark accounting.
+- SSE2 four-wide FP32 dot products on supported x86/x64 targets with a portable scalar fallback.
+- `parallel_matmul`: RHS-transposed contiguous dot kernels distributed across worker threads.
+- native symmetric INT8 matrix multiplication with int32 accumulation and quantization-scale restoration; it does not dequantize the full operands before multiplying.
+- `ComputeBackend`: hardware-independent execution contract for matmul and quantized matmul.
+- `CpuBackend`: threshold-based scalar/threaded dispatch and explicit SIMD backend identity.
+- `benchmark`: steady-clock benchmark harness for local kernel measurements without encoding unstable CI speed claims into tests.
+- `spiral_compute_tests`: proves multiple worker threads execute work, aligned scratch allocation/reset, SIMD/scalar dot equivalence, threaded FP32 matmul equivalence, INT8 accuracy bounds, backend polymorphism, and benchmark operation.
 
-L17 remains a compact CPU reference media-flow model. The temporal denoiser is a small sequence-coupled MLP rather than a large video/audio DiT, and the L16 media codecs remain intentionally tiny. The important new contract is real: Spiral can start from noise plus text and produce a complete native audio/video latent timeline without a seed clip or foreign generative runtime.
+L18 deliberately does **not** claim a native GPU kernel yet. `ComputeBackend` is the boundary that future Spiral GPU backends will implement; this rung certifies the threaded/SIMD/quantized CPU reference first so later accelerators have an exact numerical contract to beat without changing model code.
 
-No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, FFmpeg, libsndfile, Stable Diffusion/diffusion wrapper, pretrained-model runtime, vector database, external agent framework, or hosted-model API is required.
+No llama.cpp, PyTorch, TensorFlow, OpenCV, PIL, FFmpeg, libsndfile, Stable Diffusion/diffusion wrapper, pretrained-model runtime, vector database, external agent framework, hosted-model API, BLAS library, or external thread-pool runtime is required.
 
 ## Build
 
@@ -58,7 +57,8 @@ images/image_0002.ppm<TAB>a blue signal in fog
 - L15 ✅ causal temporal attention + explicit temporal backward + next-latent learning + audio latent synthesis + video embedding generation + temporal checkpoints
 - L16 ✅ complex/phase-preserving audio + learned complex codec + frame embedding decoder + temporal audio→PCM + temporal embeddings→RGB
 - L17 ✅ learned prompt-temporal conditioning + sequence denoising + temporal consistency + prompt→PCM + prompt→RGB + media-flow checkpoints
-- L18 ⬜ native accelerated compute: SIMD + threading + GPU kernels + serious model scaling
-- L19 ⬜ Spiral Units + unified multimodal runtime
+- L18 ✅ native thread pool + aligned arena + SSE2/scalar kernels + parallel FP32 matmul + native INT8 matmul + compute backend + benchmark harness
+- L19 ⬜ Spiral Units + unified multimodal runtime + compute-backed model execution
+- L20 ⬜ native GPU kernels + device memory + serious heterogeneous scaling
 
 The rule is simple: external systems may be studied and benchmarked, but Spiral owns its core abstractions and can replace any optional dependency.
