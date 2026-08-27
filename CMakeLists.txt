@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(spiralos_ai_genius VERSION 0.0.12 LANGUAGES CXX)
+project(spiralos_ai_genius VERSION 0.0.13 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -26,6 +26,7 @@ add_library(spiral_core STATIC
     src/multimodal.cpp
     src/flow.cpp
     src/latent_transformer.cpp
+    src/scale.cpp
 )
 
 target_include_directories(spiral_core PUBLIC include)
@@ -89,3 +90,7 @@ add_test(NAME spiral_flow_tests COMMAND spiral_flow_tests)
 add_executable(spiral_latent_transformer_tests tests/latent_transformer_tests.cpp)
 target_link_libraries(spiral_latent_transformer_tests PRIVATE spiral_core)
 add_test(NAME spiral_latent_transformer_tests COMMAND spiral_latent_transformer_tests)
+
+add_executable(spiral_scale_tests tests/scale_tests.cpp)
+target_link_libraries(spiral_scale_tests PRIVATE spiral_core)
+add_test(NAME spiral_scale_tests COMMAND spiral_scale_tests)
