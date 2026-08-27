@@ -19,20 +19,37 @@ jobs:
         run: cmake --build build --config Release
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Run performance proof (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: build/Release/spiral_benchmark.exe --output spiral-performance-proof-windows.json
+      - name: Run performance proof (Ubuntu)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: ./build/spiral_benchmark --output spiral-performance-proof-ubuntu.json
+      - name: Upload performance proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: spiral-performance-proof-${{ runner.os }}
+          path: spiral-performance-proof-*.json
+          if-no-files-found: error
       - name: Package Windows x64
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path package | Out-Null
           Copy-Item build/Release/spiral_genius.exe package/
+          Copy-Item build/Release/spiral_benchmark.exe package/
           Copy-Item START_HERE.txt package/
+          Copy-Item PROOF_PLAN.md package/
+          Copy-Item spiral-performance-proof-windows.json package/
           Copy-Item README.md package/
           Copy-Item LICENSE package/ -ErrorAction SilentlyContinue
-          Compress-Archive -Path package/* -DestinationPath SpiralOS-AI-Genius-L23-GPT-Mode-Windows-x64.zip -Force
+          Compress-Archive -Path package/* -DestinationPath SpiralOS-AI-Genius-L24-PERFORMANCE-PROOF-Windows-x64.zip -Force
       - name: Upload Windows x64 ZIP
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: SpiralOS-AI-Genius-L23-GPT-Mode-Windows-x64
-          path: SpiralOS-AI-Genius-L23-GPT-Mode-Windows-x64.zip
+          name: SpiralOS-AI-Genius-L24-PERFORMANCE-PROOF-Windows-x64
+          path: SpiralOS-AI-Genius-L24-PERFORMANCE-PROOF-Windows-x64.zip
           if-no-files-found: error
