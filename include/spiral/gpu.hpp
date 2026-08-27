@@ -8,6 +8,8 @@
 
 namespace spiral::gpu {
 
+class D3D11ComputeEngine;
+
 enum class NativeGpuBackend {
     D3D11,
 };
@@ -52,6 +54,7 @@ private:
     std::unique_ptr<Impl> impl_;
 
     friend class D3D11FramebufferPresenter;
+    friend class D3D11ComputeEngine;
 };
 
 [[nodiscard]] std::string_view native_gpu_backend_name(NativeGpuBackend backend) noexcept;
