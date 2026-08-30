@@ -1,0 +1,92 @@
+#pragma once
+
+#include <functional>
+#include <map>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace spiral::xenon {
+
+enum class PermissionTier {
+    Read,
+    Propose,
+    Write,
+    Critical,
+};
+
+struct ToolIntent {
+    std::string host;
+    std::string action;
+    std::map<std::string, std::string> arguments;
+};
+
+struct ToolResult {
+    bool success = false;
+    std::string message;
+    std::map<std::string, std::string> data;
+};
+
+struct ToolDefinition {
+    std::string qualified_name;
+    PermissionTier permission = PermissionTier::Read;
+    std::string description;
+};
+
+class ToolBus final {
+public:
+    using Handler = std::function<ToolResult(const ToolIntent&)>;
+
+    bool register_tool(ToolDefinition definition, Handler handler);
+    [[nodiscard]] bool contains(std::string_view qualified_name) const;
+    [[nodiscard]] std::vector<ToolDefinition> capabilities() const;
+    [[nodiscard]] ToolResult dispatch(const ToolIntent& intent, bool allow_mutation = false) const;
+
+private:
+    struct Entry {
+        ToolDefinition definition;
+        Handler handler;
+    };
+    std::map<std::string, Entry, std::less<>> entries_;
+};
+
+struct SpiralContext {
+    std::string host;
+    std::string host_context;
+    std::string local_datetime;
+    std::string organic_topic;
+    float organic_focus = 0.0F;
+    float organic_curiosity = 0.0F;
+    float organic_coherence = 0.0F;
+    std::vector<std::pair<std::string, std::string>> recent_turns;
+    std::vector<ToolResult> recent_tool_results;
+};
+
+struct CortexReply {
+    bool ok = false;
+    std::string text;
+    std::string error;
+};
+
+class LocalCortex final {
+public:
+    bool configure_gguf(std::string model_path, std::string runtime_path = {}, std::string* error = nullptr) noexcept;
+    void unload() noexcept;
+
+    [[nodiscard]] bool loaded() const noexcept;
+    [[nodiscard]] const std::string& model_path() const noexcept;
+    [[nodiscard]] const std::string& runtime_path() const noexcept;
+    [[nodiscard]] CortexReply generate(const SpiralContext& context, std::string_view user_text,
+                                       std::size_t max_new_tokens = 256, float temperature = 0.7F) const;
+
+private:
+    std::string model_path_;
+    std::string runtime_path_;
+};
+
+[[nodiscard]] std::string current_local_datetime();
+[[nodiscard]] std::string build_cortex_prompt(const SpiralContext& context, std::string_view user_text);
+[[nodiscard]] ToolBus make_default_tool_bus();
+
+} // namespace spiral::xenon
