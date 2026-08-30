@@ -1,4 +1,4 @@
-name: L26 chat UI hotfix
+name: L26 chat UI + AI hotfix
 
 on:
   push:
@@ -10,20 +10,51 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Patch chat viewport semantics
+
+      - name: Patch chat viewport, text metrics, and composer wheel
         shell: pwsh
         run: |
           $p = 'apps/ether_ai/main.cpp'
           $s = Get-Content $p -Raw
-          $old = 'target_->PushAxisAlignedClip(clip,D2D1_ANTIALIAS_MODE_PER_PRIMITIVE); float y=clip.top+12.0F-scroll_offset_;'
-          $new = 'target_->PushAxisAlignedClip(clip,D2D1_ANTIALIAS_MODE_PER_PRIMITIVE); const float inner_content_height=std::max(0.0F,content_height_-12.0F); const float bottom_anchor=std::max(0.0F,chat_view_height_-inner_content_height); float y=clip.top+12.0F+bottom_anchor-scroll_offset_;'
-          if (-not $s.Contains($old)) { throw 'draw_chat anchor target not found' }
-          $s = $s.Replace($old, $new)
+
+          $oldMeasure = 'float measure_text(const std::wstring& text,IDWriteTextFormat* format,float width) const { ComPtr<IDWriteTextLayout> l; if(FAILED(write_factory_->CreateTextLayout(text.c_str(),static_cast<UINT32>(text.size()),format,std::max(1.0F,width),4000.0F,l.GetAddressOf())))return 24.0F; DWRITE_TEXT_METRICS m{}; if(FAILED(l->GetMetrics(&m)))return 24.0F; return m.height; }'
+          $newMeasure = 'float measure_text(const std::wstring& text,IDWriteTextFormat* format,float width) const { ComPtr<IDWriteTextLayout> l; if(FAILED(write_factory_->CreateTextLayout(text.c_str(),static_cast<UINT32>(text.size()),format,std::max(1.0F,width),4000.0F,l.GetAddressOf())))return 28.0F; DWRITE_TEXT_METRICS m{}; if(FAILED(l->GetMetrics(&m)))return 28.0F; DWRITE_OVERHANG_METRICS o{}; (void)l->GetOverhangMetrics(&o); return std::ceil(m.height + std::max(0.0F,o.bottom) + 8.0F); }'
+          if (-not $s.Contains($oldMeasure)) { throw 'measure_text target not found' }
+          $s = $s.Replace($oldMeasure, $newMeasure)
+
+          $oldHeight = 'for(const auto& m:messages_){const float bh=measure_text(m.text,body_format_.Get(),tw)+32.0F;heights.push_back(bh);content_height_+=bh+14.0F;}'
+          $newHeight = 'for(const auto& m:messages_){const float bh=measure_text(m.text,body_format_.Get(),tw)+50.0F;heights.push_back(bh);content_height_+=bh+14.0F;}'
+          if (-not $s.Contains($oldHeight)) { throw 'bubble height target not found' }
+          $s = $s.Replace($oldHeight, $newHeight)
+
+          $oldAnchor = 'target_->PushAxisAlignedClip(clip,D2D1_ANTIALIAS_MODE_PER_PRIMITIVE); float y=clip.top+12.0F-scroll_offset_;'
+          $newAnchor = 'target_->PushAxisAlignedClip(clip,D2D1_ANTIALIAS_MODE_PER_PRIMITIVE); const float inner_content_height=std::max(0.0F,content_height_-12.0F); const float bottom_anchor=std::max(0.0F,chat_view_height_-inner_content_height); float y=clip.top+12.0F+bottom_anchor-scroll_offset_;'
+          if (-not $s.Contains($oldAnchor)) { throw 'draw_chat anchor target not found' }
+          $s = $s.Replace($oldAnchor, $newAnchor)
+
+          $oldBody = 'draw_text(m.text,body_format_.Get(),text_brush_.Get(),D2D1::RectF(bubble.left+15,bubble.top+27,bubble.right-15,bubble.bottom-10));'
+          $newBody = 'draw_text(m.text,body_format_.Get(),text_brush_.Get(),D2D1::RectF(bubble.left+15,bubble.top+31,bubble.right-15,bubble.bottom-14));'
+          if (-not $s.Contains($oldBody)) { throw 'body text rect target not found' }
+          $s = $s.Replace($oldBody, $newBody)
+
           $oldWheel = 'if (self != nullptr && msg == WM_KEYDOWN && wparam == VK_ESCAPE) {'
           $newWheel = 'if (self != nullptr && msg == WM_MOUSEWHEEL) { SendMessageW(self->hwnd_, WM_MOUSEWHEEL, wparam, lparam); return 0; }' + [Environment]::NewLine + '        if (self != nullptr && msg == WM_KEYDOWN && wparam == VK_ESCAPE) {'
           if (-not $s.Contains($oldWheel)) { throw 'edit wheel target not found' }
           $s = $s.Replace($oldWheel, $newWheel)
+
           Set-Content -Path $p -Value $s -NoNewline -Encoding utf8
+
+      - name: Patch AUTO backend to use real AI when configured
+        shell: pwsh
+        run: |
+          $p = 'src/ether_ai.cpp'
+          $s = Get-Content $p -Raw
+          $old = '    sync_host_context_locked();' + [Environment]::NewLine + '}'
+          $new = '    sync_host_context_locked();' + [Environment]::NewLine + '    const auto startup = shell_.status();' + [Environment]::NewLine + '    if (startup.openai_platform_supported && startup.openai_key_present) {' + [Environment]::NewLine + '        shell_.set_gpt_backend(genius::GptBackend::OpenAI);' + [Environment]::NewLine + '    }' + [Environment]::NewLine + '}'
+          if (-not $s.Contains($old)) { throw 'runtime constructor target not found' }
+          $s = $s.Replace($old, $new)
+          Set-Content -Path $p -Value $s -NoNewline -Encoding utf8
+
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
@@ -36,16 +67,18 @@ jobs:
           Copy-Item START_HERE.txt product/
           Copy-Item README.md product/
           @'
-          L26 CHAT UI HOTFIX
-          - conversation is bottom-anchored when history is shorter than the viewport
-          - new messages remain pinned to the newest content
-          - mouse-wheel events over the composer are forwarded to chat history
-          - existing draggable scrollbar and track paging remain active
-          '@ | Set-Content product/CHAT_UI_HOTFIX.txt
-          Compress-Archive -Path product/* -DestinationPath Spiral-Ether-AI-L26-CHAT-UI-HOTFIX-Windows-x64.zip -Force
+          L26 CHAT + AI HOTFIX
+          - DirectWrite message heights now include glyph overhang and safety padding
+          - message bubbles reserve enough vertical room for wrapped text
+          - conversation bottom-anchors correctly and retains wheel/drag scrolling
+          - wheel input over the composer scrolls transcript history
+          - AUTO selects the OpenAI bridge automatically when OPENAI_API_KEY is configured
+          - without an API key or trained local .bundle, ORGANIC remains the offline fallback
+          '@ | Set-Content product/CHAT_AI_HOTFIX.txt
+          Compress-Archive -Path product/* -DestinationPath Spiral-Ether-AI-L26-CHAT-AI-HOTFIX-Windows-x64.zip -Force
       - name: Upload patched Windows build
         uses: actions/upload-artifact@v4
         with:
-          name: Spiral-Ether-AI-L26-CHAT-UI-HOTFIX-Windows-x64
-          path: Spiral-Ether-AI-L26-CHAT-UI-HOTFIX-Windows-x64.zip
+          name: Spiral-Ether-AI-L26-CHAT-AI-HOTFIX-Windows-x64
+          path: Spiral-Ether-AI-L26-CHAT-AI-HOTFIX-Windows-x64.zip
           if-no-files-found: error
