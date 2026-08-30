@@ -17,7 +17,6 @@ int main() {
     assert(status.host.kind == ether_ai::HostKind::StandaloneWindows);
     assert(status.shell.mode == genius::ShellMode::Gpt);
 
-    // Without a configured trained cortex, fallback is explicit rather than fake-smart prose.
     if (runtime.backend() == genius::GptBackend::Auto) {
         const std::string limited = runtime.send("hello spiral");
         assert(limited.find("LANGUAGE CORTEX: OFFLINE / LIMITED MODE") != std::string::npos);
@@ -25,9 +24,16 @@ int main() {
         assert(runtime.status().shell.organic_memories >= 1);
     }
 
-    // Native clock grounding bypasses model guessing and works even in LIMITED MODE.
     const std::string day = runtime.send("what day is it?");
     assert(day.rfind("Today is ", 0) == 0);
+
+    // Reproduce the exact Windows composer edge case: case changes + surrounding CR/LF/whitespace.
+    const std::string day_windows = runtime.send("  WHAT DAY IS IT \r\n");
+    assert(day_windows.rfind("Today is ", 0) == 0);
+    assert(day_windows.find("native learned knowledge") == std::string::npos);
+
+    const std::string date_windows = runtime.send("WHAT DATE IS IT???\r\n");
+    assert(date_windows.rfind("Today is ", 0) == 0);
 
     auto history = runtime.history();
     assert(history.size() >= 2);
@@ -60,6 +66,6 @@ int main() {
 
     std::filesystem::remove(state_path);
     std::filesystem::remove(state_path.string() + ".memory");
-    std::cout << "Ether AI L27D language quality tests passed\n";
+    std::cout << "Ether AI L27D HF2 routing tests passed\n";
     return 0;
 }
