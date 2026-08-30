@@ -1,0 +1,51 @@
+name: L26 chat UI hotfix
+
+on:
+  push:
+    branches: ["spiral/l26-chat-bottom-scroll-hotfix"]
+  workflow_dispatch:
+
+jobs:
+  windows-package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch chat viewport semantics
+        shell: pwsh
+        run: |
+          $p = 'apps/ether_ai/main.cpp'
+          $s = Get-Content $p -Raw
+          $old = 'target_->PushAxisAlignedClip(clip,D2D1_ANTIALIAS_MODE_PER_PRIMITIVE); float y=clip.top+12.0F-scroll_offset_;'
+          $new = 'target_->PushAxisAlignedClip(clip,D2D1_ANTIALIAS_MODE_PER_PRIMITIVE); const float inner_content_height=std::max(0.0F,content_height_-12.0F); const float bottom_anchor=std::max(0.0F,chat_view_height_-inner_content_height); float y=clip.top+12.0F+bottom_anchor-scroll_offset_;'
+          if (-not $s.Contains($old)) { throw 'draw_chat anchor target not found' }
+          $s = $s.Replace($old, $new)
+          $oldWheel = 'if (self != nullptr && msg == WM_KEYDOWN && wparam == VK_ESCAPE) {'
+          $newWheel = 'if (self != nullptr && msg == WM_MOUSEWHEEL) { SendMessageW(self->hwnd_, WM_MOUSEWHEEL, wparam, lparam); return 0; }`r`n        if (self != nullptr && msg == WM_KEYDOWN && wparam == VK_ESCAPE) {'
+          if (-not $s.Contains($oldWheel)) { throw 'edit wheel target not found' }
+          $s = $s.Replace($oldWheel, $newWheel)
+          Set-Content -Path $p -Value $s -NoNewline -Encoding utf8
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release --target spiral_ether_ai
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path product | Out-Null
+          Copy-Item build/Release/spiral_ether_ai.exe product/SpiralEtherAI.exe
+          Copy-Item START_HERE.txt product/
+          Copy-Item README.md product/
+          @'
+          L26 CHAT UI HOTFIX
+          - conversation is bottom-anchored when history is shorter than the viewport
+          - new messages remain pinned to the newest content
+          - mouse-wheel events over the composer are forwarded to chat history
+          - existing draggable scrollbar and track paging remain active
+          '@ | Set-Content product/CHAT_UI_HOTFIX.txt
+          Compress-Archive -Path product/* -DestinationPath Spiral-Ether-AI-L26-CHAT-UI-HOTFIX-Windows-x64.zip -Force
+      - name: Upload patched Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spiral-Ether-AI-L26-CHAT-UI-HOTFIX-Windows-x64
+          path: Spiral-Ether-AI-L26-CHAT-UI-HOTFIX-Windows-x64.zip
+          if-no-files-found: error
