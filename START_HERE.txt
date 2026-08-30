@@ -4,47 +4,78 @@ SPIRAL ETHER AI — WINDOWS x64
 Run:
   SpiralEtherAI.exe
 
-This is the native Windows GPT-style Spiral Ether AI host.
+This is the native Windows Spiral Ether AI host.
 The AI session/runtime is host-neutral C++ and can be embedded into EtherPlay, Hakui, EtherBeat, or another Spiral application.
+
+ORGANIC DEFAULT
+---------------
+Spiral Ether AI now boots with its own native ORGANIC state.
+No API key and no model bundle are required for the AI to exist, remember, evolve state, and respond.
+
+The organic loop runs locally:
+  perceive -> retrieve memory -> update drives -> choose response strategy -> remember -> persist
+
+It tracks persistent internal state including:
+  energy / focus / curiosity / confidence / warmth / novelty / coherence / current topic
+
+Standalone persistence files are created beside the app:
+  SpiralEtherAI.organic
+  SpiralEtherAI.organic.memory
+
++ NEW SESSION clears the visible transcript only.
+Organic durable memory remains unless you explicitly use:
+  /resetorganic
 
 WHAT YOU SEE
 ------------
 - GPT-style conversation history
 - multiline composer at the bottom
 - native Win32 + Direct2D/DirectWrite UI
-- Halo-3-era HUD influence + EtherPlayer-style media-console structure
-- backend / GPU / model telemetry
+- Halo-era cyan HUD influence + EtherPlayer-style media-console structure
+- organic brain / GPU / model telemetry
 - host-context switcher: WINDOWS / ETHERPLAY / HAKUI / ETHERBEAT
+
+BACKENDS / CORTICES
+-------------------
+The BACKEND chip cycles:
+  ORGANIC -> OPENAI_BRIDGE -> SPIRAL_LOCAL_CORTEX -> ORGANIC
+
+ORGANIC:
+  Native offline Spiral mind. This is the default and never calls a network API.
+
+SPIRAL_LOCAL_CORTEX:
+  Optional trained Spiral .bundle language model. Organic state remains a separate persistent substrate.
+
+OPENAI_BRIDGE:
+  Optional explicit network bridge only. Spiral never selects it automatically.
+  If you choose it, OPENAI_API_KEY must be present in the Windows environment.
 
 HOST CONTEXT
 ------------
 Use the left rail to switch the active host context.
-This does not replace the AI runtime. It demonstrates the same Ether AI core running as different Spiral hosts.
+The same organic mind/session core remains underneath while host capabilities/context change.
 
-REAL GPT / OPENAI BACKEND
--------------------------
-Spiral reads the OpenAI API key ONLY from the Windows environment.
-Do not paste your key into the app conversation.
+Examples:
+- ETHERPLAY: playback, library, metadata, waveform, audio-analysis context
+- HAKUI: live world, avatar, scene, social runtime, Spiral Units context
+- ETHERBEAT: arrangement, generation, seams, stems, song-building context
 
-PowerShell, current window only:
-  $env:OPENAI_API_KEY="YOUR_KEY_HERE"
-  .\SpiralEtherAI.exe
-
-The BACKEND chip cycles:
-  AUTO -> OPENAI -> SPIRAL_LOCAL -> AUTO
-
-AUTO behavior:
-  1. Use OpenAI when OPENAI_API_KEY is present.
-  2. Otherwise use a loaded native Spiral model bundle.
-  3. If neither exists, say so explicitly instead of pretending random weights are intelligent.
-
-SOVEREIGN LOCAL SPIRAL
+SOVEREIGN LOCAL CORTEX
 ----------------------
 Drag a .bundle model file onto the app window, or type:
   /load C:\path\to\your\model.bundle
 
-Then select SPIRAL_LOCAL from the BACKEND chip.
-A trained production model bundle is not included in this package yet.
+Then select SPIRAL_LOCAL_CORTEX from the BACKEND chip.
+A trained production language bundle is not included yet.
+
+OPTIONAL OPENAI BRIDGE
+----------------------
+Only if you explicitly want the bridge:
+  $env:OPENAI_API_KEY="YOUR_KEY_HERE"
+  .\SpiralEtherAI.exe
+
+Then select OPENAI_BRIDGE.
+The key is read only from the environment and is never printed by the app.
 
 CHAT CONTROLS
 -------------
@@ -52,15 +83,18 @@ CHAT CONTROLS
 - Shift+Enter: newline
 - Esc: clear composer
 - Mouse wheel: scroll conversation
-- + NEW SESSION: clear current session
-- BACKEND chip: cycle AI backend
+- + NEW SESSION: clear visible transcript
+- BACKEND chip: cycle ORGANIC / optional cortices
 - drop a .bundle: load local Spiral model
 
-SLASH COMMANDS STILL WORK
--------------------------
+SLASH COMMANDS
+--------------
   /help
   /status
-  /backend auto|openai|spiral
+  /organic
+  /memory
+  /backend organic|spiral|openai
+  /resetorganic
   /gpu
   /model
   /load <bundle-path>
@@ -69,16 +103,20 @@ SLASH COMMANDS STILL WORK
 
 PORTABILITY CONTRACT
 --------------------
-The reusable API is:
+Reusable API:
   include/spiral/ether_ai.hpp
 
-The standalone Windows UI is only one host. EtherPlay, Hakui, and EtherBeat can instantiate the same spiral::ether_ai::Runtime without importing this Win32 UI code.
+Organic substrate:
+  include/spiral/organic_ai.hpp
+
+The standalone Windows UI is only one host. EtherPlay, Hakui, EtherBeat, and custom Spiral clients can instantiate the same spiral::ether_ai::Runtime without importing Win32 UI code.
 
 SECURITY / PRIVACY
 ------------------
+- ORGANIC mode is local and does not call OpenAI.
+- SPIRAL_LOCAL_CORTEX mode is local and does not call OpenAI.
+- OPENAI_BRIDGE is explicit opt-in only.
 - OPENAI_API_KEY is read from the environment and is never printed by the app.
-- OpenAI calls use HTTPS through native WinHTTP.
-- Local Spiral mode does not send prompts to OpenAI.
 
 ENGINEERING NOTE
 ----------------
