@@ -57,11 +57,13 @@ public:
     void clear();
 
 private:
+    [[nodiscard]] std::string internal_user_envelope(std::string_view visible_text) const;
     void sync_host_context_locked();
 
     mutable std::mutex mutex_;
     HostDescriptor host_;
     genius::GeniusShell shell_;
+    std::vector<Message> visible_history_;
 };
 
 [[nodiscard]] std::string host_kind_name(HostKind kind);
