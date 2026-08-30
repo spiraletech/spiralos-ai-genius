@@ -1,5 +1,6 @@
 #pragma once
 
+#include "spiral/genius_kernel.hpp"
 #include "spiral/memory.hpp"
 
 #include <cstddef>
@@ -40,6 +41,7 @@ struct Response {
     PerceptionKind perception = PerceptionKind::Statement;
     State state;
     std::vector<memory::MemoryHit> recalled;
+    genius::Trace cognition;
 };
 
 class OrganicMind final {
@@ -50,6 +52,7 @@ public:
     [[nodiscard]] const State& state() const noexcept { return state_; }
     [[nodiscard]] const memory::MemoryStore& memory() const noexcept { return memory_; }
     [[nodiscard]] std::size_t memory_count() const noexcept { return memory_.records().size(); }
+    [[nodiscard]] const genius::Trace& last_cognition() const noexcept { return last_cognition_; }
 
     void reset();
     void save(const std::string& path) const;
@@ -64,11 +67,14 @@ private:
         std::string_view input,
         std::string_view host_context,
         PerceptionKind perception,
-        const std::vector<memory::MemoryHit>& recalled) const;
+        const std::vector<memory::MemoryHit>& recalled,
+        const genius::Trace& cognition) const;
     void update_state(std::string_view input, PerceptionKind perception, std::string_view topic, bool recalled_memory);
 
     State state_;
     memory::MemoryStore memory_;
+    genius::Kernel genius_kernel_;
+    genius::Trace last_cognition_;
 };
 
 } // namespace spiral::organic
