@@ -13,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace spiral::genius {
@@ -23,9 +24,9 @@ enum class ShellMode {
 };
 
 enum class GptBackend {
-    Auto,        // Native organic mind. Never calls a network API.
-    OpenAI,      // Explicit optional bridge.
-    SpiralLocal, // Explicit trained local model bundle.
+    Auto,
+    OpenAI,
+    SpiralLocal,
 };
 
 struct ChatTurn {
@@ -83,12 +84,17 @@ public:
     [[nodiscard]] const std::vector<ChatTurn>& history() const noexcept { return history_; }
     [[nodiscard]] const std::string& system_context() const noexcept { return system_context_; }
     [[nodiscard]] const organic::OrganicMind& organic_mind() const noexcept { return organic_mind_; }
+    [[nodiscard]] organic::OrganicMind& organic_mind_mutable() noexcept { return organic_mind_; }
     [[nodiscard]] const Trace& last_cognition() const noexcept { return last_cognition_; }
 
     void set_mode(ShellMode mode) noexcept { mode_ = mode; }
     void set_gpt_backend(GptBackend backend) noexcept { gpt_backend_ = backend; }
     void set_system_context(std::string context) { system_context_ = std::move(context); }
     void clear_history() noexcept { history_.clear(); }
+    void replace_last_assistant_reply(std::string reply) {
+        if (!history_.empty() && history_.back().role == "assistant") history_.back().content = std::move(reply);
+    }
+    void set_last_cognition(Trace trace) { last_cognition_ = std::move(trace); }
 
     void set_organic_state_path(std::string path, bool load_existing = true) noexcept;
     [[nodiscard]] const std::string& organic_state_path() const noexcept { return organic_state_path_; }
