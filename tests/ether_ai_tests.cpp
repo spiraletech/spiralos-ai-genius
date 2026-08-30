@@ -35,10 +35,21 @@ int main() {
     assert(history[0].content == "hello spiral");
     assert(history[1].role == "assistant");
 
+    // App-level regression for the exact bad responses reported from the Windows UI.
+    const std::string state_reply = runtime.send("what is the local state");
+    assert(state_reply.find("My local organic state right now") != std::string::npos);
+    assert(state_reply.find("focus") != std::string::npos);
+    assert(state_reply.find("For broad factual knowledge") == std::string::npos);
+
+    const std::string processor_reply = runtime.send("what is ur processor");
+    assert(processor_reply.find("native C++") != std::string::npos);
+    assert(processor_reply.find("CPU") != std::string::npos);
+    assert(processor_reply.find("what is the local state") == std::string::npos);
+
     runtime.set_backend(genius::GptBackend::SpiralLocal);
     const std::string local_reply = runtime.send("hello local cortex");
     assert(local_reply.find("no trained language-model bundle") != std::string::npos);
-    assert(runtime.status().shell.organic_turns == 1);
+    assert(runtime.status().shell.organic_turns == 3);
 
     runtime.set_backend(genius::GptBackend::Auto);
     runtime.set_host(ether_ai::etherplay_host());
@@ -46,9 +57,9 @@ int main() {
     assert(status.host.kind == ether_ai::HostKind::EtherPlay);
     assert(status.host.name == "EtherPlay");
     assert(runtime.host().kind == ether_ai::HostKind::EtherPlay);
-    const std::string host_reply = runtime.send("How should we handle playback?");
-    assert(!host_reply.empty());
-    assert(runtime.status().shell.organic_turns == 2);
+    const std::string host_reply = runtime.send("what host are you running in?");
+    assert(host_reply.find("EtherPlay") != std::string::npos);
+    assert(runtime.status().shell.organic_turns == 4);
 
     runtime.set_host(ether_ai::hakui_host());
     assert(runtime.host().kind == ether_ai::HostKind::Hakui);
@@ -69,6 +80,6 @@ int main() {
     std::filesystem::remove(state_path);
     std::filesystem::remove(state_path.string() + ".memory");
 
-    std::cout << "Ether AI organic portable runtime tests passed\n";
+    std::cout << "Ether AI organic portable runtime response tests passed\n";
     return 0;
 }
