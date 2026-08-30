@@ -35,7 +35,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $model = Get-Item SmolLM2-135M-Instruct-Q4_K_M.gguf
           if ($model.Length -lt 90000000) { throw "bundled GGUF is unexpectedly small: $($model.Length) bytes" }
-          curl.exe -L --fail --retry 3 'https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/raw/main/LICENSE' -o MODEL_LICENSE.txt
+          curl.exe -L --fail --retry 3 'https://www.apache.org/licenses/LICENSE-2.0.txt' -o MODEL_LICENSE.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           @'
           Bundled model: bartowski/SmolLM2-135M-Instruct-GGUF
