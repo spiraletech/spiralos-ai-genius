@@ -20,7 +20,7 @@ jobs:
           if (-not $s.Contains($old)) { throw 'draw_chat anchor target not found' }
           $s = $s.Replace($old, $new)
           $oldWheel = 'if (self != nullptr && msg == WM_KEYDOWN && wparam == VK_ESCAPE) {'
-          $newWheel = 'if (self != nullptr && msg == WM_MOUSEWHEEL) { SendMessageW(self->hwnd_, WM_MOUSEWHEEL, wparam, lparam); return 0; }`r`n        if (self != nullptr && msg == WM_KEYDOWN && wparam == VK_ESCAPE) {'
+          $newWheel = 'if (self != nullptr && msg == WM_MOUSEWHEEL) { SendMessageW(self->hwnd_, WM_MOUSEWHEEL, wparam, lparam); return 0; }' + [Environment]::NewLine + '        if (self != nullptr && msg == WM_KEYDOWN && wparam == VK_ESCAPE) {'
           if (-not $s.Contains($oldWheel)) { throw 'edit wheel target not found' }
           $s = $s.Replace($oldWheel, $newWheel)
           Set-Content -Path $p -Value $s -NoNewline -Encoding utf8
