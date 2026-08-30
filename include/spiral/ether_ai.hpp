@@ -36,7 +36,7 @@ struct Status {
 
 class Runtime final {
 public:
-    explicit Runtime(HostDescriptor host = {});
+    explicit Runtime(HostDescriptor host = {}, std::string organic_state_path = {});
 
     Runtime(const Runtime&) = delete;
     Runtime& operator=(const Runtime&) = delete;
@@ -55,9 +55,9 @@ public:
     [[nodiscard]] bool load_local_model(const std::string& path, std::string* error = nullptr) noexcept;
     void unload_local_model() noexcept;
     void clear();
+    void reset_organic_state() noexcept;
 
 private:
-    [[nodiscard]] std::string internal_user_envelope(std::string_view visible_text) const;
     void sync_host_context_locked();
 
     mutable std::mutex mutex_;
