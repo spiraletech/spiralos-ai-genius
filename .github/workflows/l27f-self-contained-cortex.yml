@@ -13,7 +13,9 @@ jobs:
 
       - name: Apply L27F source patch
         shell: pwsh
-        run: ./scripts/l27f_patch.ps1
+        run: |
+          ./scripts/l27f_patch.ps1
+          ./scripts/l27f_single_turn.ps1
 
       - name: Fetch pinned llama.cpp Windows CPU runtime
         shell: pwsh
@@ -65,7 +67,7 @@ jobs:
           $llama = Get-ChildItem llama-runtime -Filter llama-cli.exe -Recurse | Select-Object -First 1
           if ($null -eq $llama) { throw 'llama-cli.exe missing before model smoke test' }
           $env:PATH = "$($llama.Directory.FullName);$env:PATH"
-          $output = & $llama.FullName -m "$PWD/SmolLM2-135M-Instruct-Q4_K_M.gguf" -p "Reply with the single word READY." -n 12 -c 512 --temp 0 --no-display-prompt 2>&1 | Out-String
+          $output = & $llama.FullName -m "$PWD/SmolLM2-135M-Instruct-Q4_K_M.gguf" -p "Reply with the single word READY." -n 12 -c 512 -st --temp 0 --no-display-prompt 2>&1 | Out-String
           if ($LASTEXITCODE -ne 0) { Write-Host $output; throw 'real GGUF inference smoke test failed' }
           if ([string]::IsNullOrWhiteSpace($output)) { throw 'real GGUF inference emitted no output' }
           Write-Host $output
@@ -93,6 +95,7 @@ jobs:
           - llama.cpp b10621 Windows x64 CPU runtime is bundled beside it.
           - no model drag/drop, PATH edit, API key, or separate llama.cpp installation is required for local generative chat.
           - HF3 ORGANIC conversation, native date grounding, persistent memory, XENON tools, and chat UI fixes remain intact.
+          - local inference is forced into one-shot single-turn mode so each GUI send returns instead of falling into llama.cpp interactive mode.
           - the bundled 135M model is deliberately compact; larger compatible instruct GGUF models can still be loaded by drag/drop for higher language quality.
 
           The bundled model and llama.cpp are distributed under their included licenses.
