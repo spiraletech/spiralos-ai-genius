@@ -1,4 +1,4 @@
-name: L27D HF2 XENON Windows package
+name: L27D HF3 XENON Windows package
 
 on:
   push:
@@ -43,9 +43,38 @@ jobs:
           '@
           if (-not $s.Contains($old.Trim())) { throw 'runtime date router target not found' }
           $s = $s.Replace($old.Trim(), $new.Trim())
+
+          # 2) HF3: when no trained cortex is loaded, keep ORGANIC conversational behavior
+          #    for greetings / memory / identity / statements instead of replacing every turn
+          #    with the same LIMITED MODE paragraph. Only genuine knowledge-limit replies collapse
+          #    to the explicit limited-mode explanation.
+          $fallbackOld = @'
+              } else {
+                  (void)shell_.organic_mind_mutable().respond(visible, context_for(host_));
+                  reply = limited_mode_reply();
+                  shell_.organic_mind_mutable().adopt_reply(reply);
+                  std::string ignored;
+                  (void)shell_.save_organic_state(&ignored);
+              }
+          '@
+          $fallbackNew = @'
+              } else {
+                  const std::string organic_reply = shell_.organic_mind_mutable().respond(visible, context_for(host_));
+                  const bool needs_cortex = organic_reply.empty() ||
+                      organic_reply.find("LANGUAGE CORTEX OFFLINE / LIMITED MODE") != std::string::npos ||
+                      organic_reply.find("not enough learned knowledge") != std::string::npos ||
+                      organic_reply.find("need the trained Spiral language cortex") != std::string::npos;
+                  reply = needs_cortex ? limited_mode_reply() : organic_reply;
+                  shell_.organic_mind_mutable().adopt_reply(reply);
+                  std::string ignored;
+                  (void)shell_.save_organic_state(&ignored);
+              }
+          '@
+          if (-not $s.Contains($fallbackOld.Trim())) { throw 'runtime fallback target not found' }
+          $s = $s.Replace($fallbackOld.Trim(), $fallbackNew.Trim())
           Set-Content -Path $p -Value $s -NoNewline -Encoding utf8
 
-          # 2) Disable the legacy generic question sentence so it cannot appear in this shipped binary.
+          # 3) Disable the old generic question sentence so it cannot appear in this shipped binary.
           $p = 'src/organic_ai.cpp'
           $s = Get-Content $p -Raw
           $legacy = 'I don''t have enough native learned knowledge to answer that reliably yet. '
@@ -54,17 +83,36 @@ jobs:
           $s = $s.Replace($legacy, $replacement)
           Set-Content -Path $p -Value $s -NoNewline -Encoding utf8
 
-          # 3) Embed an unmistakable build ID into the actual GUI executable.
+          # 4) Extend lightweight local greeting recognition.
+          $p = 'src/organic_ai.cpp'
+          $s = Get-Content $p -Raw
+          $greetOld = 'if (contains_word(tokens, "hello") || contains_word(tokens, "hey") || contains_word(tokens, "hi") || tokens.front() == "yo") {'
+          $greetNew = 'if (contains_word(tokens, "hello") || contains_word(tokens, "hey") || contains_word(tokens, "hi") || contains_word(tokens, "sup") || tokens.front() == "yo" || lower.find("what''s up") != std::string::npos || lower.find("whats up") != std::string::npos) {'
+          if (-not $s.Contains($greetOld)) { throw 'organic greeting target not found' }
+          $s = $s.Replace($greetOld, $greetNew)
+          Set-Content -Path $p -Value $s -NoNewline -Encoding utf8
+
+          # 5) Embed an unmistakable HF3 build ID into the actual GUI executable.
           $p = 'apps/ether_ai/main.cpp'
           $s = Get-Content $p -Raw
           $bannerOld = 'L"Spiral Ether AI online. Native organic cognition is active. The same C++ runtime can inhabit Windows, EtherPlay, Hakui, EtherBeat, or another Spiral host."'
-          $bannerNew = 'L"Spiral Ether AI L27D-HF2-20260830 online. Native clock routing + XENON cortex routing verified."'
+          $bannerNew = 'L"Spiral Ether AI L27D-HF3-20260830 online. Native small-talk + clock routing + XENON cortex routing verified."'
           if (-not $s.Contains($bannerOld)) { throw 'build banner target not found' }
           $s = $s.Replace($bannerOld, $bannerNew)
           $titleOld = 'L"Spiral Ether AI",'
-          $titleNew = 'L"Spiral Ether AI — L27D HF2",'
+          $titleNew = 'L"Spiral Ether AI — L27D HF3",'
           if (-not $s.Contains($titleOld)) { throw 'window title target not found' }
           $s = $s.Replace($titleOld, $titleNew)
+          Set-Content -Path $p -Value $s -NoNewline -Encoding utf8
+
+          # 6) Extend runtime regression: HI must produce an organic conversational reply,
+          #    not the same LIMITED MODE paragraph.
+          $p = 'tests/ether_ai_tests.cpp'
+          $s = Get-Content $p -Raw
+          $anchor = 'const std::string day = runtime.send("what day is it?");' + [Environment]::NewLine + '    assert(day.rfind("Today is ", 0) == 0);'
+          $insert = $anchor + [Environment]::NewLine + [Environment]::NewLine + '    const std::string hello = runtime.send("hi");' + [Environment]::NewLine + '    assert(hello.find("LANGUAGE CORTEX: OFFLINE / LIMITED MODE") == std::string::npos);' + [Environment]::NewLine + '    assert(hello.find("Organic mode is running locally") != std::string::npos);'
+          if (-not $s.Contains($anchor)) { throw 'HF3 test insertion target not found' }
+          $s = $s.Replace($anchor, $insert)
           Set-Content -Path $p -Value $s -NoNewline -Encoding utf8
 
       - name: Preserve chat UI hotfixes and GGUF drag-load
@@ -95,7 +143,7 @@ jobs:
       - name: Build exact shipping targets
         run: cmake --build build --config Release --target spiral_ether_ai spiral_ether_ai_tests spiral_xenon_os_tests
 
-      - name: L27D HF2 runtime regression suite
+      - name: L27D HF3 runtime regression suite
         shell: pwsh
         run: |
           build/Release/spiral_ether_ai_tests.exe
@@ -103,16 +151,18 @@ jobs:
           build/Release/spiral_xenon_os_tests.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Verify shipping EXE identity and remove legacy signature
+      - name: Verify shipping EXE identity and response signatures
         shell: pwsh
         run: |
           $exe = 'build/Release/spiral_ether_ai.exe'
           if (-not (Test-Path $exe)) { throw 'shipping exe missing' }
-          $ascii = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($exe))
-          $unicode = [Text.Encoding]::Unicode.GetString([IO.File]::ReadAllBytes($exe))
-          if (-not ($ascii.Contains('L27D-HF2-20260830') -or $unicode.Contains('L27D-HF2-20260830'))) { throw 'HF2 build marker missing from exe' }
+          $bytes = [IO.File]::ReadAllBytes($exe)
+          $ascii = [Text.Encoding]::ASCII.GetString($bytes)
+          $unicode = [Text.Encoding]::Unicode.GetString($bytes)
+          if (-not ($ascii.Contains('L27D-HF3-20260830') -or $unicode.Contains('L27D-HF3-20260830'))) { throw 'HF3 build marker missing from exe' }
           if ($ascii.Contains("I don't have enough native learned knowledge to answer that reliably yet.")) { throw 'legacy generic fallback still embedded in shipping exe' }
-          Write-Host 'HF2 shipping binary verification passed.'
+          if (-not $ascii.Contains('Organic mode is running locally.')) { throw 'organic greeting signature missing from shipping exe' }
+          Write-Host 'HF3 shipping binary verification passed.'
 
       - name: Package
         shell: pwsh
@@ -122,28 +172,34 @@ jobs:
           Copy-Item START_HERE.txt product/
           Copy-Item README.md product/
           @'
-          SPIRAL ETHER AI — L27D HF2 — 20260830
+          SPIRAL ETHER AI — L27D HF3 — 20260830
 
-          VERIFIED FIXES
-          - robust native date/day routing handles uppercase, whitespace, CR/LF, and repeated punctuation
-          - legacy generic "native learned knowledge" fallback removed from shipping EXE
-          - exact Windows GUI executable contains build marker L27D-HF2-20260830
-          - runtime regression explicitly tests Windows-composer-shaped input: "  WHAT DAY IS IT \r\n"
-          - GGUF/XENON language quality path from L27D remains enabled
+          HF3 FIX
+          - HI / HELLO / HEY / YO / SUP / WHAT'S UP now use the local ORGANIC conversational responder
+          - no trained cortex no longer means every non-date message receives the identical LIMITED MODE paragraph
+          - knowledge questions that truly need a language cortex still fail explicitly instead of pretending
+          - native date/day grounding remains intact
+          - XENON / GGUF path remains intact
           - chat UI bottom anchoring, text metrics, wheel scrolling, and GGUF drag-load preserved
 
-          EXPECTED TEST
+          QUICK TEST
+          HI
+          -> short local organic greeting
+
           WHAT DAY IS IT
           -> Today is <weekday>, <Month> <day>, <year>.
 
-          The title bar must say: Spiral Ether AI — L27D HF2
-          The first system bubble must contain: L27D-HF2-20260830
-          '@ | Set-Content product/L27D_HF2_VERIFY.txt
-          Compress-Archive -Path product/* -DestinationPath Spiral-Ether-AI-L27D-HF2-Windows-x64.zip -Force
+          WHAT IS QUANTUM CHROMODYNAMICS
+          -> explicit LANGUAGE CORTEX OFFLINE / LIMITED MODE unless a trained GGUF cortex is loaded
+
+          The title bar must say: Spiral Ether AI — L27D HF3
+          The first system bubble must contain: L27D-HF3-20260830
+          '@ | Set-Content product/L27D_HF3_VERIFY.txt
+          Compress-Archive -Path product/* -DestinationPath Spiral-Ether-AI-L27D-HF3-Windows-x64.zip -Force
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: Spiral-Ether-AI-L27D-HF2-Windows-x64
-          path: Spiral-Ether-AI-L27D-HF2-Windows-x64.zip
+          name: Spiral-Ether-AI-L27D-HF3-Windows-x64
+          path: Spiral-Ether-AI-L27D-HF3-Windows-x64.zip
           if-no-files-found: error
