@@ -1,6 +1,7 @@
 #pragma once
 
 #include "spiral/genius_shell.hpp"
+#include "spiral/xenon_os.hpp"
 
 #include <cstddef>
 #include <mutex>
@@ -12,6 +13,7 @@ namespace spiral::ether_ai {
 
 enum class HostKind {
     StandaloneWindows,
+    XenonOS,
     EtherPlay,
     Hakui,
     EtherBeat,
@@ -32,6 +34,10 @@ struct Message {
 struct Status {
     HostDescriptor host;
     genius::ShellStatus shell;
+    bool xenon_online = true;
+    bool xenon_local_cortex_loaded = false;
+    std::string xenon_model_path;
+    std::size_t xenon_tool_count = 0;
 };
 
 class Runtime final {
@@ -54,20 +60,29 @@ public:
 
     [[nodiscard]] bool load_local_model(const std::string& path, std::string* error = nullptr) noexcept;
     void unload_local_model() noexcept;
+
+    [[nodiscard]] xenon::ToolResult dispatch_tool(const xenon::ToolIntent& intent, bool allow_mutation = false);
+    [[nodiscard]] std::vector<xenon::ToolDefinition> tool_capabilities() const;
+
     void clear();
     void reset_organic_state() noexcept;
 
 private:
     void sync_host_context_locked();
+    [[nodiscard]] xenon::SpiralContext xenon_context_locked(std::string_view pending_user_text = {}) const;
 
     mutable std::mutex mutex_;
     HostDescriptor host_;
     genius::GeniusShell shell_;
+    xenon::LocalCortex local_cortex_;
+    xenon::ToolBus tool_bus_;
+    std::vector<xenon::ToolResult> recent_tool_results_;
     std::vector<Message> visible_history_;
 };
 
 [[nodiscard]] std::string host_kind_name(HostKind kind);
 [[nodiscard]] HostDescriptor standalone_host();
+[[nodiscard]] HostDescriptor xenon_host();
 [[nodiscard]] HostDescriptor etherplay_host();
 [[nodiscard]] HostDescriptor hakui_host();
 [[nodiscard]] HostDescriptor etherbeat_host();
