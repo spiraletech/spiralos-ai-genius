@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(spiralos_ai_genius VERSION 0.0.27 LANGUAGES CXX)
+project(spiralos_ai_genius VERSION 0.0.28 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -48,6 +48,7 @@ add_library(spiral_core STATIC
     src/native_host.cpp
     src/openai_backend.cpp
     src/genius_shell.cpp
+    src/ether_ai.cpp
 )
 
 target_include_directories(spiral_core PUBLIC include)
@@ -69,6 +70,15 @@ target_link_libraries(spiral_genius PRIVATE spiral_core)
 
 add_executable(spiral_benchmark apps/benchmark/main.cpp)
 target_link_libraries(spiral_benchmark PRIVATE spiral_core)
+
+if(WIN32)
+    add_executable(spiral_ether_ai WIN32 apps/ether_ai/main.cpp)
+    target_link_libraries(spiral_ether_ai PRIVATE spiral_core d2d1 dwrite dwmapi user32 gdi32 shell32 ole32)
+    target_compile_definitions(spiral_ether_ai PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+    if(MSVC)
+        target_compile_options(spiral_ether_ai PRIVATE /W4 /permissive-)
+    endif()
+endif()
 
 enable_testing()
 
@@ -175,3 +185,7 @@ add_test(NAME spiral_genius_shell_tests COMMAND spiral_genius_shell_tests)
 add_executable(spiral_performance_proof_tests tests/performance_proof_tests.cpp)
 target_link_libraries(spiral_performance_proof_tests PRIVATE spiral_core)
 add_test(NAME spiral_performance_proof_tests COMMAND spiral_performance_proof_tests)
+
+add_executable(spiral_ether_ai_tests tests/ether_ai_tests.cpp)
+target_link_libraries(spiral_ether_ai_tests PRIVATE spiral_core)
+add_test(NAME spiral_ether_ai_tests COMMAND spiral_ether_ai_tests)
