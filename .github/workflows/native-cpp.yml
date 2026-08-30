@@ -19,37 +19,34 @@ jobs:
         run: cmake --build build --config Release
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
-      - name: Run performance proof (Windows)
+      - name: Run performance proof (Windows diagnostics)
         if: runner.os == 'Windows'
         shell: pwsh
         run: build/Release/spiral_benchmark.exe --output spiral-performance-proof-windows.json
-      - name: Run performance proof (Ubuntu)
+      - name: Run performance proof (Ubuntu diagnostics)
         if: runner.os == 'Linux'
         shell: bash
         run: ./build/spiral_benchmark --output spiral-performance-proof-ubuntu.json
-      - name: Upload performance proof
+      - name: Upload engineering diagnostics
         uses: actions/upload-artifact@v4
         with:
           name: spiral-performance-proof-${{ runner.os }}
           path: spiral-performance-proof-*.json
           if-no-files-found: error
-      - name: Package Windows x64
+      - name: Package Spiral Ether AI Windows x64
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path package | Out-Null
-          Copy-Item build/Release/spiral_genius.exe package/
-          Copy-Item build/Release/spiral_benchmark.exe package/
-          Copy-Item START_HERE.txt package/
-          Copy-Item PROOF_PLAN.md package/
-          Copy-Item spiral-performance-proof-windows.json package/
-          Copy-Item README.md package/
-          Copy-Item LICENSE package/ -ErrorAction SilentlyContinue
-          Compress-Archive -Path package/* -DestinationPath SpiralOS-AI-Genius-L24-PERFORMANCE-PROOF-Windows-x64.zip -Force
-      - name: Upload Windows x64 ZIP
+          New-Item -ItemType Directory -Force -Path product | Out-Null
+          Copy-Item build/Release/spiral_ether_ai.exe product/SpiralEtherAI.exe
+          Copy-Item START_HERE.txt product/
+          Copy-Item README.md product/
+          Copy-Item LICENSE product/ -ErrorAction SilentlyContinue
+          Compress-Archive -Path product/* -DestinationPath Spiral-Ether-AI-Windows-x64.zip -Force
+      - name: Upload Spiral Ether AI Windows x64
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: SpiralOS-AI-Genius-L24-PERFORMANCE-PROOF-Windows-x64
-          path: SpiralOS-AI-Genius-L24-PERFORMANCE-PROOF-Windows-x64.zip
+          name: Spiral-Ether-AI-Windows-x64
+          path: Spiral-Ether-AI-Windows-x64.zip
           if-no-files-found: error
