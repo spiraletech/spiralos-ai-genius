@@ -15,12 +15,15 @@ jobs:
         shell: pwsh
         run: ./scripts/l27e_patch.ps1
 
-      - name: Build bundled llama.cpp runtime
+      - name: Fetch pinned llama.cpp Windows CPU runtime
         shell: pwsh
         run: |
-          git clone --depth 1 --branch v0.3.0 https://github.com/ggml-org/llama.cpp.git llama.cpp
-          cmake -S llama.cpp -B llama-build -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF -DGGML_NATIVE=OFF
-          cmake --build llama-build --config Release --target llama-cli
+          $url = 'https://github.com/ggml-org/llama.cpp/releases/download/b10621/llama-b10621-bin-win-cpu-x64.zip'
+          Invoke-WebRequest -Uri $url -OutFile llama-runtime.zip
+          Expand-Archive llama-runtime.zip -DestinationPath llama-runtime -Force
+          $llama = Get-ChildItem llama-runtime -Filter llama-cli.exe -Recurse | Select-Object -First 1
+          if ($null -eq $llama) { throw 'llama-cli.exe missing from pinned runtime' }
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ggml-org/llama.cpp/v0.3.0/LICENSE' -OutFile LLAMA_CPP_LICENSE.txt
 
       - name: Configure Spiral
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -41,18 +44,18 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force product | Out-Null
           Copy-Item build/Release/spiral_ether_ai.exe product/SpiralEtherAI.exe
-          $llama = Get-ChildItem -Path llama-build -Filter llama-cli.exe -Recurse | Select-Object -First 1
-          if ($null -eq $llama) { throw 'llama-cli.exe not built' }
+          $llama = Get-ChildItem llama-runtime -Filter llama-cli.exe -Recurse | Select-Object -First 1
+          if ($null -eq $llama) { throw 'llama-cli.exe not found at package time' }
           Copy-Item $llama.FullName product/llama-cli.exe
-          Get-ChildItem -Path $llama.Directory.FullName -Filter *.dll -ErrorAction SilentlyContinue | Copy-Item -Destination product -Force
-          Copy-Item llama.cpp/LICENSE product/LLAMA_CPP_LICENSE.txt
+          Get-ChildItem $llama.Directory.FullName -Filter *.dll -ErrorAction SilentlyContinue | Copy-Item -Destination product -Force
+          Copy-Item LLAMA_CPP_LICENSE.txt product/
           Copy-Item START_HERE.txt product/
           Copy-Item README.md product/
           @'
           SPIRAL ETHER AI — L27E BUNDLED LOCAL CORTEX
 
           WHAT CHANGED
-          - llama.cpp v0.3.0 llama-cli is bundled beside SpiralEtherAI.exe
+          - pinned llama.cpp b10621 / v0.3.0 Windows x64 CPU runtime is bundled beside SpiralEtherAI.exe
           - no separate llama.cpp install or PATH setup is required
           - drag a compatible instruct .gguf onto SpiralEtherAI.exe to activate the trained local cortex
           - HF3 ORGANIC conversation, native date grounding, memory, XENON tools, and chat UI fixes are preserved
