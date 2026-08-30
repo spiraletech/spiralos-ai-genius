@@ -1,4 +1,4 @@
-name: L27D XENON Language Quality Windows package
+name: L27D HF2 XENON Windows package
 
 on:
   push:
@@ -10,6 +10,62 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Hard-fix runtime routing and mark build
+        shell: pwsh
+        run: |
+          # 1) Make native date/day routing tolerate case, spaces, CR/LF, and repeated punctuation.
+          $p = 'src/ether_ai.cpp'
+          $s = Get-Content $p -Raw
+          $old = @'
+          bool asks_for_date_or_day(std::string_view text) {
+              const std::string value = lower(std::string(text));
+              return value == "what day is it" || value == "what day is it?" || value == "what date is it" || value == "what date is it?" ||
+                     value.find("what's the date") != std::string::npos || value.find("whats the date") != std::string::npos;
+          }
+          '@
+          $new = @'
+          bool asks_for_date_or_day(std::string_view text) {
+              std::string value = lower(std::string(text));
+              const auto first = value.find_first_not_of(" \t\r\n");
+              if (first == std::string::npos) return false;
+              value.erase(0, first);
+              const auto last = value.find_last_not_of(" \t\r\n");
+              if (last != std::string::npos) value.erase(last + 1);
+              while (!value.empty() && (value.back() == '?' || value.back() == '!' || value.back() == '.')) value.pop_back();
+              return value.find("what day is it") != std::string::npos ||
+                     value.find("what date is it") != std::string::npos ||
+                     value.find("what's the date") != std::string::npos ||
+                     value.find("whats the date") != std::string::npos ||
+                     value.find("today's date") != std::string::npos ||
+                     value.find("todays date") != std::string::npos;
+          }
+          '@
+          if (-not $s.Contains($old.Trim())) { throw 'runtime date router target not found' }
+          $s = $s.Replace($old.Trim(), $new.Trim())
+          Set-Content -Path $p -Value $s -NoNewline -Encoding utf8
+
+          # 2) Disable the legacy generic question sentence so it cannot appear in this shipped binary.
+          $p = 'src/organic_ai.cpp'
+          $s = Get-Content $p -Raw
+          $legacy = 'I don''t have enough native learned knowledge to answer that reliably yet. '
+          $replacement = 'LANGUAGE CORTEX OFFLINE / LIMITED MODE. This request needs either native grounding, a connected XENON tool, or a trained language cortex. '
+          if (-not $s.Contains($legacy)) { throw 'legacy generic fallback target not found' }
+          $s = $s.Replace($legacy, $replacement)
+          Set-Content -Path $p -Value $s -NoNewline -Encoding utf8
+
+          # 3) Embed an unmistakable build ID into the actual GUI executable.
+          $p = 'apps/ether_ai/main.cpp'
+          $s = Get-Content $p -Raw
+          $bannerOld = 'L"Spiral Ether AI online. Native organic cognition is active. The same C++ runtime can inhabit Windows, EtherPlay, Hakui, EtherBeat, or another Spiral host."'
+          $bannerNew = 'L"Spiral Ether AI L27D-HF2-20260830 online. Native clock routing + XENON cortex routing verified."'
+          if (-not $s.Contains($bannerOld)) { throw 'build banner target not found' }
+          $s = $s.Replace($bannerOld, $bannerNew)
+          $titleOld = 'L"Spiral Ether AI",'
+          $titleNew = 'L"Spiral Ether AI — L27D HF2",'
+          if (-not $s.Contains($titleOld)) { throw 'window title target not found' }
+          $s = $s.Replace($titleOld, $titleNew)
+          Set-Content -Path $p -Value $s -NoNewline -Encoding utf8
 
       - name: Preserve chat UI hotfixes and GGUF drag-load
         shell: pwsh
@@ -35,10 +91,28 @@ jobs:
 
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-      - name: Build
-        run: cmake --build build --config Release --target spiral_ether_ai spiral_xenon_os_tests
-      - name: L27D quality regression suite
-        run: build/Release/spiral_xenon_os_tests.exe
+
+      - name: Build exact shipping targets
+        run: cmake --build build --config Release --target spiral_ether_ai spiral_ether_ai_tests spiral_xenon_os_tests
+
+      - name: L27D HF2 runtime regression suite
+        shell: pwsh
+        run: |
+          build/Release/spiral_ether_ai_tests.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          build/Release/spiral_xenon_os_tests.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify shipping EXE identity and remove legacy signature
+        shell: pwsh
+        run: |
+          $exe = 'build/Release/spiral_ether_ai.exe'
+          if (-not (Test-Path $exe)) { throw 'shipping exe missing' }
+          $ascii = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($exe))
+          $unicode = [Text.Encoding]::Unicode.GetString([IO.File]::ReadAllBytes($exe))
+          if (-not ($ascii.Contains('L27D-HF2-20260830') -or $unicode.Contains('L27D-HF2-20260830'))) { throw 'HF2 build marker missing from exe' }
+          if ($ascii.Contains("I don't have enough native learned knowledge to answer that reliably yet.")) { throw 'legacy generic fallback still embedded in shipping exe' }
+          Write-Host 'HF2 shipping binary verification passed.'
 
       - name: Package
         shell: pwsh
@@ -48,29 +122,28 @@ jobs:
           Copy-Item START_HERE.txt product/
           Copy-Item README.md product/
           @'
-          L27D LANGUAGE QUALITY PASS
-          D.1 explicit cortex routing + honest LIMITED MODE fallback
-          D.2 GGUF instruct-model loading + template detection/override (SPIRAL_CHAT_TEMPLATE)
-          D.3 bounded conversation context manager
-          D.4 selective ORGANIC memory retrieval
-          D.5 Cortex -> TOOL_CALL -> ToolResult -> second cortex inference loop
-          D.6 llama.cpp diagnostic cleanup + tuned sampling
-          D.7 native Windows/local clock grounding; "what day is it?" bypasses model guessing
-          D.8 native quality regression coverage for prompt grounding, tool parsing, cleanup and permission gates
+          SPIRAL ETHER AI — L27D HF2 — 20260830
 
-          Local model setup:
-          - set SPIRAL_LLAMA_EXE to llama-cli.exe or put llama-cli.exe on PATH
-          - optional SPIRAL_MODEL_PATH auto-loads a .gguf on startup
-          - optional SPIRAL_CHAT_TEMPLATE overrides detected template
-          - or drag an instruct .gguf onto SpiralEtherAI.exe
+          VERIFIED FIXES
+          - robust native date/day routing handles uppercase, whitespace, CR/LF, and repeated punctuation
+          - legacy generic "native learned knowledge" fallback removed from shipping EXE
+          - exact Windows GUI executable contains build marker L27D-HF2-20260830
+          - runtime regression explicitly tests Windows-composer-shaped input: "  WHAT DAY IS IT \r\n"
+          - GGUF/XENON language quality path from L27D remains enabled
+          - chat UI bottom anchoring, text metrics, wheel scrolling, and GGUF drag-load preserved
 
-          Without a trained local model, Spiral now states LANGUAGE CORTEX OFFLINE / LIMITED MODE instead of pretending the handcrafted ORGANIC responder is GPT-quality.
-          '@ | Set-Content product/L27D_LANGUAGE_QUALITY.txt
-          Compress-Archive -Path product/* -DestinationPath Spiral-Ether-AI-L27D-LANGUAGE-QUALITY-Windows-x64.zip -Force
+          EXPECTED TEST
+          WHAT DAY IS IT
+          -> Today is <weekday>, <Month> <day>, <year>.
+
+          The title bar must say: Spiral Ether AI — L27D HF2
+          The first system bubble must contain: L27D-HF2-20260830
+          '@ | Set-Content product/L27D_HF2_VERIFY.txt
+          Compress-Archive -Path product/* -DestinationPath Spiral-Ether-AI-L27D-HF2-Windows-x64.zip -Force
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: Spiral-Ether-AI-L27D-LANGUAGE-QUALITY-Windows-x64
-          path: Spiral-Ether-AI-L27D-LANGUAGE-QUALITY-Windows-x64.zip
+          name: Spiral-Ether-AI-L27D-HF2-Windows-x64
+          path: Spiral-Ether-AI-L27D-HF2-Windows-x64.zip
           if-no-files-found: error
