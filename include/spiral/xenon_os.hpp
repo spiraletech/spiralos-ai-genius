@@ -10,7 +10,6 @@
 namespace spiral::xenon {
 
 enum class PermissionTier { Read, Propose, Write, Critical };
-
 enum class CortexState { Offline, Ready, Error };
 
 struct ToolIntent {
@@ -43,6 +42,20 @@ private:
     std::map<std::string, Entry, std::less<>> entries_;
 };
 
+struct HostBridgeStatus {
+    std::string host;
+    bool online = false;
+    std::string endpoint;
+    std::string detail;
+};
+
+class EngineBridge final {
+public:
+    [[nodiscard]] static std::string endpoint_for(std::string_view host);
+    [[nodiscard]] HostBridgeStatus probe(std::string_view host) const;
+    [[nodiscard]] ToolResult request(const ToolIntent& intent, unsigned timeout_ms = 1200) const;
+};
+
 struct SpiralContext {
     std::string host;
     std::string host_context;
@@ -56,11 +69,7 @@ struct SpiralContext {
     std::vector<ToolResult> recent_tool_results;
 };
 
-struct CortexReply {
-    bool ok = false;
-    std::string text;
-    std::string error;
-};
+struct CortexReply { bool ok = false; std::string text; std::string error; };
 
 class LocalCortex final {
 public:
