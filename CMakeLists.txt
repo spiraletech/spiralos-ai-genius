@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(spiralos_ai_genius VERSION 0.0.32 LANGUAGES CXX)
+project(spiralos_ai_genius VERSION 0.0.33 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -50,6 +50,7 @@ add_library(spiral_core STATIC
     src/genius_kernel.cpp
     src/organic_ai.cpp
     src/genius_shell.cpp
+    src/xenon_os.cpp
     src/ether_ai.cpp
 )
 
@@ -201,3 +202,7 @@ add_test(NAME spiral_organic_ai_tests COMMAND spiral_organic_ai_tests)
 add_executable(spiral_genius_kernel_tests tests/genius_kernel_tests.cpp)
 target_link_libraries(spiral_genius_kernel_tests PRIVATE spiral_core)
 add_test(NAME spiral_genius_kernel_tests COMMAND spiral_genius_kernel_tests)
+
+add_executable(spiral_xenon_os_tests tests/xenon_os_tests.cpp)
+target_link_libraries(spiral_xenon_os_tests PRIVATE spiral_core)
+add_test(NAME spiral_xenon_os_tests COMMAND spiral_xenon_os_tests)
