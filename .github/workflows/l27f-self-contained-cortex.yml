@@ -1,0 +1,113 @@
+name: L27F Self-Contained Cortex Windows package
+
+on:
+  push:
+    branches: ["spiral/l27f-self-contained-cortex"]
+  workflow_dispatch:
+
+jobs:
+  windows-package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply L27F source patch
+        shell: pwsh
+        run: ./scripts/l27f_patch.ps1
+
+      - name: Fetch pinned llama.cpp Windows CPU runtime
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/ggml-org/llama.cpp/releases/download/b10621/llama-b10621-bin-win-cpu-x64.zip'
+          curl.exe -L --fail --retry 3 $url -o llama-runtime.zip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Expand-Archive llama-runtime.zip -DestinationPath llama-runtime -Force
+          $llama = Get-ChildItem llama-runtime -Filter llama-cli.exe -Recurse | Select-Object -First 1
+          if ($null -eq $llama) { throw 'llama-cli.exe missing from pinned runtime' }
+          curl.exe -L --fail --retry 3 'https://raw.githubusercontent.com/ggml-org/llama.cpp/v0.3.0/LICENSE' -o LLAMA_CPP_LICENSE.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Fetch bundled Apache-2.0 instruct model
+        shell: pwsh
+        run: |
+          $modelUrl = 'https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf?download=true'
+          curl.exe -L --fail --retry 3 $modelUrl -o SmolLM2-135M-Instruct-Q4_K_M.gguf
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $model = Get-Item SmolLM2-135M-Instruct-Q4_K_M.gguf
+          if ($model.Length -lt 90000000) { throw "bundled GGUF is unexpectedly small: $($model.Length) bytes" }
+          curl.exe -L --fail --retry 3 'https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/raw/main/LICENSE' -o MODEL_LICENSE.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          @'
+          Bundled model: bartowski/SmolLM2-135M-Instruct-GGUF
+          File: SmolLM2-135M-Instruct-Q4_K_M.gguf
+          Upstream family: HuggingFaceTB/SmolLM2-135M-Instruct
+          License: Apache-2.0
+          Purpose: compact offline bootstrap cortex. Users may replace it by dragging another compatible instruct GGUF into Spiral Ether AI.
+          '@ | Set-Content MODEL_SOURCE.txt
+
+      - name: Configure Spiral
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build Spiral
+        run: cmake --build build --config Release --target spiral_ether_ai spiral_ether_ai_tests spiral_xenon_os_tests
+
+      - name: Regression suite
+        shell: pwsh
+        run: |
+          build/Release/spiral_ether_ai_tests.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          build/Release/spiral_xenon_os_tests.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Real GGUF inference smoke test
+        shell: pwsh
+        run: |
+          $llama = Get-ChildItem llama-runtime -Filter llama-cli.exe -Recurse | Select-Object -First 1
+          if ($null -eq $llama) { throw 'llama-cli.exe missing before model smoke test' }
+          $env:PATH = "$($llama.Directory.FullName);$env:PATH"
+          $output = & $llama.FullName -m "$PWD/SmolLM2-135M-Instruct-Q4_K_M.gguf" -p "Reply with the single word READY." -n 12 -c 512 --temp 0 --no-display-prompt 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) { Write-Host $output; throw 'real GGUF inference smoke test failed' }
+          if ([string]::IsNullOrWhiteSpace($output)) { throw 'real GGUF inference emitted no output' }
+          Write-Host $output
+
+      - name: Package and verify
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force product | Out-Null
+          Copy-Item build/Release/spiral_ether_ai.exe product/SpiralEtherAI.exe
+          $llama = Get-ChildItem llama-runtime -Filter llama-cli.exe -Recurse | Select-Object -First 1
+          if ($null -eq $llama) { throw 'llama-cli.exe not found at package time' }
+          Copy-Item $llama.FullName product/llama-cli.exe
+          Get-ChildItem $llama.Directory.FullName -Filter *.dll -ErrorAction SilentlyContinue | Copy-Item -Destination product -Force
+          Copy-Item SmolLM2-135M-Instruct-Q4_K_M.gguf product/
+          Copy-Item LLAMA_CPP_LICENSE.txt product/
+          Copy-Item MODEL_LICENSE.txt product/
+          Copy-Item MODEL_SOURCE.txt product/
+          Copy-Item START_HERE.txt product/
+          Copy-Item README.md product/
+          @'
+          SPIRAL ETHER AI — L27F SELF-CONTAINED CORTEX
+
+          READY ON FIRST LAUNCH
+          - SpiralEtherAI.exe automatically discovers the bundled SmolLM2 135M Instruct Q4_K_M GGUF beside the executable.
+          - llama.cpp b10621 Windows x64 CPU runtime is bundled beside it.
+          - no model drag/drop, PATH edit, API key, or separate llama.cpp installation is required for local generative chat.
+          - HF3 ORGANIC conversation, native date grounding, persistent memory, XENON tools, and chat UI fixes remain intact.
+          - the bundled 135M model is deliberately compact; larger compatible instruct GGUF models can still be loaded by drag/drop for higher language quality.
+
+          The bundled model and llama.cpp are distributed under their included licenses.
+          '@ | Set-Content product/L27F_README.txt
+
+          $bytes = [IO.File]::ReadAllBytes('product/SpiralEtherAI.exe')
+          $unicode = [Text.Encoding]::Unicode.GetString($bytes)
+          if (-not $unicode.Contains('L27F-20260830')) { throw 'L27F marker missing from shipping EXE' }
+          if (-not (Test-Path product/llama-cli.exe)) { throw 'bundled cortex runtime missing' }
+          if (-not (Test-Path product/SmolLM2-135M-Instruct-Q4_K_M.gguf)) { throw 'bundled cortex model missing' }
+          if ((Get-Item product/SmolLM2-135M-Instruct-Q4_K_M.gguf).Length -lt 90000000) { throw 'packaged model is truncated' }
+          Compress-Archive -Path product/* -DestinationPath Spiral-Ether-AI-L27F-SELF-CONTAINED-CORTEX-Windows-x64.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Spiral-Ether-AI-L27F-SELF-CONTAINED-CORTEX-Windows-x64
+          path: Spiral-Ether-AI-L27F-SELF-CONTAINED-CORTEX-Windows-x64.zip
+          if-no-files-found: error
