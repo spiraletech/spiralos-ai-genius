@@ -34,9 +34,25 @@ void Runtime::sync_host_context_locked() {
     shell_.set_system_context(context_for(host_));
 }
 
+std::string Runtime::internal_user_envelope(std::string_view visible_text) const {
+    const std::string context = context_for(host_);
+    std::string envelope;
+    envelope.reserve(context.size() + visible_text.size() + 96);
+    envelope += "[SPIRAL INTERNAL HOST CONTEXT]\n";
+    envelope += context;
+    envelope += "\n[END HOST CONTEXT]\n[VISIBLE USER MESSAGE]\n";
+    envelope.append(visible_text.data(), visible_text.size());
+    return envelope;
+}
+
 std::string Runtime::send(std::string_view text) {
     std::lock_guard lock(mutex_);
-    return shell_.chat(text);
+    const std::string visible(text);
+    if (visible.empty()) return {};
+    const std::string reply = shell_.chat(internal_user_envelope(text));
+    visible_history_.push_back(Message{"user", visible});
+    visible_history_.push_back(Message{"assistant", reply});
+    return reply;
 }
 
 std::string Runtime::command(std::string_view command_line) {
@@ -51,10 +67,7 @@ Status Runtime::status() const {
 
 std::vector<Message> Runtime::history() const {
     std::lock_guard lock(mutex_);
-    std::vector<Message> result;
-    result.reserve(shell_.history().size());
-    for (const auto& turn : shell_.history()) result.push_back(Message{turn.role, turn.content});
-    return result;
+    return visible_history_;
 }
 
 void Runtime::set_host(HostDescriptor host) {
@@ -102,6 +115,7 @@ void Runtime::unload_local_model() noexcept {
 void Runtime::clear() {
     std::lock_guard lock(mutex_);
     shell_.clear_history();
+    visible_history_.clear();
 }
 
 std::string host_kind_name(HostKind kind) {
