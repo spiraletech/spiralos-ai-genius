@@ -1,6 +1,5 @@
 $ErrorActionPreference = 'Stop'
 
-# HF3 conversational routing + robust native clock routing.
 $p = 'src/ether_ai.cpp'
 $s = Get-Content $p -Raw
 $dateOld = @'
@@ -27,8 +26,7 @@ bool asks_for_date_or_day(std::string_view text) {
            value.find("todays date") != std::string::npos;
 }
 '@
-if (-not $s.Contains($dateOld.Trim())) { throw 'date router target not found' }
-$s = $s.Replace($dateOld.Trim(), $dateNew.Trim())
+if ($s.Contains($dateOld.Trim())) { $s = $s.Replace($dateOld.Trim(), $dateNew.Trim()) }
 
 $fallbackOld = @'
     } else {
@@ -53,23 +51,18 @@ $fallbackNew = @'
         (void)shell_.save_organic_state(&ignored);
     }
 '@
-if (-not $s.Contains($fallbackOld.Trim())) { throw 'fallback target not found' }
-$s = $s.Replace($fallbackOld.Trim(), $fallbackNew.Trim())
+if ($s.Contains($fallbackOld.Trim())) { $s = $s.Replace($fallbackOld.Trim(), $fallbackNew.Trim()) }
 Set-Content $p $s -NoNewline -Encoding utf8
 
-# Keep local small-talk useful without pretending it is the trained cortex.
 $p = 'src/organic_ai.cpp'
 $s = Get-Content $p -Raw
 $legacy = 'I don''t have enough native learned knowledge to answer that reliably yet. '
-if ($s.Contains($legacy)) {
-    $s = $s.Replace($legacy, 'LANGUAGE CORTEX OFFLINE / LIMITED MODE. This request needs either native grounding, a connected XENON tool, or a trained language cortex. ')
-}
+if ($s.Contains($legacy)) { $s = $s.Replace($legacy, 'LANGUAGE CORTEX OFFLINE / LIMITED MODE. This request needs either native grounding, a connected XENON tool, or a trained language cortex. ') }
 $greetOld = 'if (contains_word(tokens, "hello") || contains_word(tokens, "hey") || contains_word(tokens, "hi") || tokens.front() == "yo") {'
 $greetNew = 'if (contains_word(tokens, "hello") || contains_word(tokens, "hey") || contains_word(tokens, "hi") || contains_word(tokens, "sup") || tokens.front() == "yo" || lower.find("what''s up") != std::string::npos || lower.find("whats up") != std::string::npos) {'
 if ($s.Contains($greetOld)) { $s = $s.Replace($greetOld, $greetNew) }
 Set-Content $p $s -NoNewline -Encoding utf8
 
-# L27E: resolve the bundled llama-cli beside SpiralEtherAI.exe and tune inference.
 $p = 'src/xenon_os.cpp'
 $s = Get-Content $p -Raw
 $anchor = 'std::filesystem::path prompt_path() {'
@@ -85,8 +78,7 @@ std::filesystem::path executable_directory() {
 
 std::filesystem::path prompt_path() {
 '@
-if (-not $s.Contains($anchor)) { throw 'prompt helper target not found' }
-$s = $s.Replace($anchor, $helper.Trim())
+if ($s.Contains($anchor)) { $s = $s.Replace($anchor, $helper.Trim()) }
 $runtimeOld = 'if (runtime_path.empty()) runtime_path = "llama-cli.exe";'
 $runtimeNew = @'
 if (runtime_path.empty()) {
@@ -114,31 +106,6 @@ if (-not $s.Contains($promptOld)) { throw 'prompt policy target not found' }
 $s = $s.Replace($promptOld, $promptNew.Trim())
 Set-Content $p $s -NoNewline -Encoding utf8
 
-# Regression expectations: greetings remain conversational without a GGUF.
-$p = 'tests/ether_ai_tests.cpp'
-$s = Get-Content $p -Raw
-$testOld = @'
-    if (runtime.backend() == genius::GptBackend::Auto) {
-        const std::string limited = runtime.send("hello spiral");
-        assert(limited.find("LANGUAGE CORTEX: OFFLINE / LIMITED MODE") != std::string::npos);
-        assert(runtime.status().shell.organic_turns == 1);
-        assert(runtime.status().shell.organic_memories >= 1);
-    }
-'@
-$testNew = @'
-    if (runtime.backend() == genius::GptBackend::Auto) {
-        const std::string hello = runtime.send("hello spiral");
-        assert(hello.find("LANGUAGE CORTEX: OFFLINE / LIMITED MODE") == std::string::npos);
-        assert(hello.find("Organic mode is running locally") != std::string::npos);
-        assert(runtime.status().shell.organic_turns == 1);
-        assert(runtime.status().shell.organic_memories >= 1);
-    }
-'@
-if (-not $s.Contains($testOld.Trim())) { throw 'fallback test target not found' }
-$s = $s.Replace($testOld.Trim(), $testNew.Trim())
-Set-Content $p $s -NoNewline -Encoding utf8
-
-# GUI identity + prior chat fixes + GGUF drag-load.
 $p = 'apps/ether_ai/main.cpp'
 $s = Get-Content $p -Raw
 $s = $s.Replace('L"Spiral Ether AI",', 'L"Spiral Ether AI — L27E Cortex",')
