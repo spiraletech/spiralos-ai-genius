@@ -2,19 +2,13 @@
 
 #include <functional>
 #include <map>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace spiral::xenon {
 
-enum class PermissionTier {
-    Read,
-    Propose,
-    Write,
-    Critical,
-};
+enum class PermissionTier { Read, Propose, Write, Critical };
 
 struct ToolIntent {
     std::string host;
@@ -37,18 +31,27 @@ struct ToolDefinition {
 class ToolBus final {
 public:
     using Handler = std::function<ToolResult(const ToolIntent&)>;
-
     bool register_tool(ToolDefinition definition, Handler handler);
     [[nodiscard]] bool contains(std::string_view qualified_name) const;
     [[nodiscard]] std::vector<ToolDefinition> capabilities() const;
     [[nodiscard]] ToolResult dispatch(const ToolIntent& intent, bool allow_mutation = false) const;
-
 private:
-    struct Entry {
-        ToolDefinition definition;
-        Handler handler;
-    };
+    struct Entry { ToolDefinition definition; Handler handler; };
     std::map<std::string, Entry, std::less<>> entries_;
+};
+
+struct HostBridgeStatus {
+    std::string host;
+    bool online = false;
+    std::string endpoint;
+    std::string detail;
+};
+
+class EngineBridge final {
+public:
+    [[nodiscard]] static std::string endpoint_for(std::string_view host);
+    [[nodiscard]] HostBridgeStatus probe(std::string_view host) const;
+    [[nodiscard]] ToolResult request(const ToolIntent& intent, unsigned timeout_ms = 1200) const;
 };
 
 struct SpiralContext {
@@ -63,23 +66,17 @@ struct SpiralContext {
     std::vector<ToolResult> recent_tool_results;
 };
 
-struct CortexReply {
-    bool ok = false;
-    std::string text;
-    std::string error;
-};
+struct CortexReply { bool ok = false; std::string text; std::string error; };
 
 class LocalCortex final {
 public:
     bool configure_gguf(std::string model_path, std::string runtime_path = {}, std::string* error = nullptr) noexcept;
     void unload() noexcept;
-
     [[nodiscard]] bool loaded() const noexcept;
     [[nodiscard]] const std::string& model_path() const noexcept;
     [[nodiscard]] const std::string& runtime_path() const noexcept;
     [[nodiscard]] CortexReply generate(const SpiralContext& context, std::string_view user_text,
                                        std::size_t max_new_tokens = 256, float temperature = 0.7F) const;
-
 private:
     std::string model_path_;
     std::string runtime_path_;
