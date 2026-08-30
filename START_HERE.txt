@@ -1,76 +1,85 @@
-SPIRAL AI GENIUS / GPT MODE — WINDOWS x64
-==========================================
+SPIRAL ETHER AI — WINDOWS x64
+=============================
 
 Run:
-  spiral_genius.exe
+  SpiralEtherAI.exe
 
-The shell starts in GPT MODE with backend AUTO.
+This is the native Windows GPT-style Spiral Ether AI host.
+The AI session/runtime is host-neutral C++ and can be embedded into EtherPlay, Hakui, EtherBeat, or another Spiral application.
 
-REAL GPT / OPENAI MODE
-----------------------
+WHAT YOU SEE
+------------
+- GPT-style conversation history
+- multiline composer at the bottom
+- native Win32 + Direct2D/DirectWrite UI
+- Halo-3-era HUD influence + EtherPlayer-style media-console structure
+- backend / GPU / model telemetry
+- host-context switcher: WINDOWS / ETHERPLAY / HAKUI / ETHERBEAT
+
+HOST CONTEXT
+------------
+Use the left rail to switch the active host context.
+This does not replace the AI runtime. It demonstrates the same Ether AI core running as different Spiral hosts.
+
+REAL GPT / OPENAI BACKEND
+-------------------------
 Spiral reads the OpenAI API key ONLY from the Windows environment.
-Do not put your API key in a chat message, config file, or command inside Spiral.
+Do not paste your key into the app conversation.
 
 PowerShell, current window only:
   $env:OPENAI_API_KEY="YOUR_KEY_HERE"
-  .\spiral_genius.exe
+  .\SpiralEtherAI.exe
 
-Inside Spiral:
-  /openai
-  /backend openai
+The BACKEND chip cycles:
+  AUTO -> OPENAI -> SPIRAL_LOCAL -> AUTO
 
-Default OpenAI model:
-  gpt-5.6
-
-Change it inside Spiral if needed:
-  /gptmodel gpt-5.6
-
-AUTO backend behavior:
-  1. Use OpenAI GPT when OPENAI_API_KEY is present.
+AUTO behavior:
+  1. Use OpenAI when OPENAI_API_KEY is present.
   2. Otherwise use a loaded native Spiral model bundle.
-  3. If neither exists, say so explicitly instead of generating fake/random output.
+  3. If neither exists, say so explicitly instead of pretending random weights are intelligent.
 
-SOVEREIGN LOCAL MODE
---------------------
-Inside Spiral:
-  /backend spiral
+SOVEREIGN LOCAL SPIRAL
+----------------------
+Drag a .bundle model file onto the app window, or type:
   /load C:\path\to\your\model.bundle
 
-This uses the native Spiral language-model runtime and does not call OpenAI.
-A trained model bundle is not included in this ZIP.
+Then select SPIRAL_LOCAL from the BACKEND chip.
+A trained production model bundle is not included in this package yet.
 
-NATIVE SUBSTRATE MODE
----------------------
-  /native
+CHAT CONTROLS
+-------------
+- Enter: send
+- Shift+Enter: newline
+- Esc: clear composer
+- Mouse wheel: scroll conversation
+- + NEW SESSION: clear current session
+- BACKEND chip: cycle AI backend
+- drop a .bundle: load local Spiral model
 
-Shows local runtime/GPU/model substrate behavior rather than conversational generation.
-Return to conversation mode with:
-  /gpt
-
-USEFUL COMMANDS
----------------
+SLASH COMMANDS STILL WORK
+-------------------------
   /help
   /status
-  /gpt
-  /native
   /backend auto|openai|spiral
-  /openai
-  /gptmodel [model-id]
   /gpu
   /model
   /load <bundle-path>
   /unload
-  /history
   /clear
-  /exit
+
+PORTABILITY CONTRACT
+--------------------
+The reusable API is:
+  include/spiral/ether_ai.hpp
+
+The standalone Windows UI is only one host. EtherPlay, Hakui, and EtherBeat can instantiate the same spiral::ether_ai::Runtime without importing this Win32 UI code.
 
 SECURITY / PRIVACY
 ------------------
-- The executable never prints OPENAI_API_KEY.
-- OpenAI requests use HTTPS through native Windows WinHTTP.
-- The Responses API request uses store:false.
+- OPENAI_API_KEY is read from the environment and is never printed by the app.
+- OpenAI calls use HTTPS through native WinHTTP.
 - Local Spiral mode does not send prompts to OpenAI.
 
-BUILD NOTE
-----------
-This package contains the interactive shell, L23 D3D11 GPU compute stack, and the full native Spiral library lineage through L23.
+ENGINEERING NOTE
+----------------
+spiral_benchmark.exe / JSON performance proof remain engineering tools in CI. They are not the product UI.
