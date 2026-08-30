@@ -57,9 +57,11 @@ public:
     [[nodiscard]] ShellMode mode() const noexcept { return mode_; }
     [[nodiscard]] GptBackend gpt_backend() const noexcept { return gpt_backend_; }
     [[nodiscard]] const std::vector<ChatTurn>& history() const noexcept { return history_; }
+    [[nodiscard]] const std::string& system_context() const noexcept { return system_context_; }
 
     void set_mode(ShellMode mode) noexcept { mode_ = mode; }
     void set_gpt_backend(GptBackend backend) noexcept { gpt_backend_ = backend; }
+    void set_system_context(std::string context) { system_context_ = std::move(context); }
     void clear_history() noexcept { history_.clear(); }
 
     [[nodiscard]] bool load_model(const std::string& path, std::string* error = nullptr) noexcept;
@@ -81,6 +83,7 @@ private:
     [[nodiscard]] std::string openai_gpt_reply();
     [[nodiscard]] std::string build_chat_prompt() const;
     [[nodiscard]] std::string build_openai_input() const;
+    [[nodiscard]] std::string openai_instructions() const;
     [[nodiscard]] static std::string trim(std::string_view text);
     [[nodiscard]] static std::optional<float> parse_float(std::string_view text);
     [[nodiscard]] static std::optional<std::size_t> parse_size(std::string_view text);
@@ -89,6 +92,7 @@ private:
     GptBackend gpt_backend_ = GptBackend::Auto;
     bool should_exit_ = false;
     std::vector<ChatTurn> history_;
+    std::string system_context_;
 
     std::unique_ptr<gpu::D3D11GpuDevice> gpu_device_;
     std::unique_ptr<gpu::D3D11ComputeEngine> gpu_compute_;
