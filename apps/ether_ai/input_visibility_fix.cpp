@@ -3,6 +3,8 @@
 #define NOMINMAX
 #include <windows.h>
 
+#include <iterator>
+
 namespace {
 
 constexpr int kComposerId = 1001;
