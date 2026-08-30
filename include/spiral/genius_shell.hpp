@@ -1,6 +1,7 @@
 #pragma once
 
 #include "spiral/generate.hpp"
+#include "spiral/genius_kernel.hpp"
 #include "spiral/gpu.hpp"
 #include "spiral/gpu_compute.hpp"
 #include "spiral/openai_backend.hpp"
@@ -12,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace spiral::genius {
@@ -22,9 +24,9 @@ enum class ShellMode {
 };
 
 enum class GptBackend {
-    Auto,        // Native organic mind. Never calls a network API.
-    OpenAI,      // Explicit optional bridge.
-    SpiralLocal, // Explicit trained local model bundle.
+    Auto,
+    OpenAI,
+    SpiralLocal,
 };
 
 struct ChatTurn {
@@ -60,6 +62,16 @@ struct ShellStatus {
     float organic_novelty = 0.0F;
     float organic_coherence = 0.0F;
     std::string organic_topic;
+
+    std::string cognition_project;
+    std::string cognition_malt;
+    std::string cognition_aum;
+    std::string cognition_mind;
+    std::string cognition_code;
+    std::string cognition_liratel;
+    float cognition_lambda = 0.0F;
+    float cognition_pressure = 0.0F;
+    bool cognition_lambda_stable = false;
 };
 
 class GeniusShell final {
@@ -72,11 +84,17 @@ public:
     [[nodiscard]] const std::vector<ChatTurn>& history() const noexcept { return history_; }
     [[nodiscard]] const std::string& system_context() const noexcept { return system_context_; }
     [[nodiscard]] const organic::OrganicMind& organic_mind() const noexcept { return organic_mind_; }
+    [[nodiscard]] organic::OrganicMind& organic_mind_mutable() noexcept { return organic_mind_; }
+    [[nodiscard]] const Trace& last_cognition() const noexcept { return last_cognition_; }
 
     void set_mode(ShellMode mode) noexcept { mode_ = mode; }
     void set_gpt_backend(GptBackend backend) noexcept { gpt_backend_ = backend; }
     void set_system_context(std::string context) { system_context_ = std::move(context); }
     void clear_history() noexcept { history_.clear(); }
+    void replace_last_assistant_reply(std::string reply) {
+        if (!history_.empty() && history_.back().role == "assistant") history_.back().content = std::move(reply);
+    }
+    void set_last_cognition(Trace trace) { last_cognition_ = std::move(trace); }
 
     void set_organic_state_path(std::string path, bool load_existing = true) noexcept;
     [[nodiscard]] const std::string& organic_state_path() const noexcept { return organic_state_path_; }
@@ -117,6 +135,8 @@ private:
 
     organic::OrganicMind organic_mind_;
     std::string organic_state_path_;
+    Kernel cognition_kernel_;
+    Trace last_cognition_;
 
     std::unique_ptr<gpu::D3D11GpuDevice> gpu_device_;
     std::unique_ptr<gpu::D3D11ComputeEngine> gpu_compute_;

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(spiralos_ai_genius VERSION 0.0.30 LANGUAGES CXX)
+project(spiralos_ai_genius VERSION 0.0.32 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -47,6 +47,7 @@ add_library(spiral_core STATIC
     src/gpu_compute.cpp
     src/native_host.cpp
     src/openai_backend.cpp
+    src/genius_kernel.cpp
     src/organic_ai.cpp
     src/genius_shell.cpp
     src/ether_ai.cpp
@@ -75,12 +76,11 @@ target_link_libraries(spiral_benchmark PRIVATE spiral_core)
 if(WIN32)
     add_executable(spiral_ether_ai WIN32
         apps/ether_ai/main.cpp
-        apps/ether_ai/input_visibility_fix.cpp
     )
     target_link_libraries(spiral_ether_ai PRIVATE spiral_core d2d1 dwrite dwmapi user32 gdi32 shell32 ole32)
     target_compile_definitions(spiral_ether_ai PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
     if(MSVC)
-        target_compile_options(spiral_ether_ai PRIVATE /W4 /permissive- /utf-8 /FIwindowsx.h)
+        target_compile_options(spiral_ether_ai PRIVATE /W4 /permissive- /utf-8)
     endif()
 endif()
 
@@ -197,3 +197,7 @@ add_test(NAME spiral_ether_ai_tests COMMAND spiral_ether_ai_tests)
 add_executable(spiral_organic_ai_tests tests/organic_ai_tests.cpp)
 target_link_libraries(spiral_organic_ai_tests PRIVATE spiral_core)
 add_test(NAME spiral_organic_ai_tests COMMAND spiral_organic_ai_tests)
+
+add_executable(spiral_genius_kernel_tests tests/genius_kernel_tests.cpp)
+target_link_libraries(spiral_genius_kernel_tests PRIVATE spiral_core)
+add_test(NAME spiral_genius_kernel_tests COMMAND spiral_genius_kernel_tests)

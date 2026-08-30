@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace spiral::organic {
@@ -50,6 +51,7 @@ public:
     [[nodiscard]] const State& state() const noexcept { return state_; }
     [[nodiscard]] const memory::MemoryStore& memory() const noexcept { return memory_; }
     [[nodiscard]] std::size_t memory_count() const noexcept { return memory_.records().size(); }
+    void adopt_reply(std::string reply) { state_.last_reply = std::move(reply); }
 
     void reset();
     void save(const std::string& path) const;
