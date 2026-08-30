@@ -18,10 +18,14 @@ int main() {
     assert(status.shell.mode == genius::ShellMode::Gpt);
 
     if (runtime.backend() == genius::GptBackend::Auto) {
-        const std::string limited = runtime.send("hello spiral");
-        assert(limited.find("LANGUAGE CORTEX: OFFLINE / LIMITED MODE") != std::string::npos);
+        const std::string hello = runtime.send("hello spiral");
+        assert(hello.find("LANGUAGE CORTEX: OFFLINE / LIMITED MODE") == std::string::npos);
+        assert(hello.find("Organic mode is running locally") != std::string::npos);
         assert(runtime.status().shell.organic_turns == 1);
         assert(runtime.status().shell.organic_memories >= 1);
+
+        const std::string sup = runtime.send("sup");
+        assert(sup.find("LANGUAGE CORTEX: OFFLINE / LIMITED MODE") == std::string::npos);
     }
 
     const std::string day = runtime.send("what day is it?");
@@ -66,6 +70,6 @@ int main() {
 
     std::filesystem::remove(state_path);
     std::filesystem::remove(state_path.string() + ".memory");
-    std::cout << "Ether AI L27D HF2 routing tests passed\n";
+    std::cout << "Ether AI L27D HF3 conversational routing tests passed\n";
     return 0;
 }
