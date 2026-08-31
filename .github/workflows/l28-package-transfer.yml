@@ -34,23 +34,110 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force product | Out-Null
           Copy-Item build/Release/SpiralAIShell.exe product/
+
           $llama = Get-ChildItem llama-runtime -Filter llama-cli.exe -Recurse | Select-Object -First 1
           if ($null -eq $llama) { throw 'llama-cli.exe missing from runtime archive' }
           Copy-Item $llama.FullName product/
           Get-ChildItem $llama.Directory.FullName -Filter *.dll | Copy-Item -Destination product -Force
+
+          # SpiralAIShell.exe is built with the MSVC dynamic CRT. Bundle the exact
+          # redistributable DLL family beside the EXE so a clean Windows machine does
+          # not require a separately installed VC++ Redistributable just to launch.
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (!(Test-Path $vswhere)) { throw 'vswhere.exe not found on Windows runner' }
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ([string]::IsNullOrWhiteSpace($vs)) { throw 'Visual Studio C++ toolchain not found' }
+          $redistRoot = Join-Path $vs 'VC\Redist\MSVC'
+          $redistVersion = Get-ChildItem $redistRoot -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          if ($null -eq $redistVersion) { throw 'MSVC redistributable directory not found' }
+          $crtDir = Join-Path $redistVersion.FullName 'x64\Microsoft.VC143.CRT'
+          if (!(Test-Path $crtDir)) { throw "MSVC x64 CRT directory not found: $crtDir" }
+          Get-ChildItem $crtDir -Filter *.dll | Copy-Item -Destination product -Force
+
           Copy-Item Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf product/
           curl.exe -L --fail --retry 3 "https://raw.githubusercontent.com/ggml-org/llama.cpp/v0.3.0/LICENSE" -o product/LLAMA_CPP_LICENSE.txt
           curl.exe -L --fail --retry 3 "https://www.apache.org/licenses/LICENSE-2.0.txt" -o product/MODEL_LICENSE.txt
+
+          @'
+          @echo off
+          setlocal
+          cd /d "%~dp0"
+          echo SPIRAL L28 STARTUP
+          echo Folder: %CD%
+          echo.
+          if not exist "SpiralAIShell.exe" goto missingexe
+          if not exist "llama-cli.exe" goto missingruntime
+          if not exist "Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf" goto missingmodel
+          echo Launching pinned Qwen2.5 Coder model...
+          echo If Spiral exits, diagnostics will be written to SPIRAL_STARTUP.log.
+          echo.
+          "SpiralAIShell.exe" --model "Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf" --runtime "llama-cli.exe" 1>SPIRAL_STDOUT.log 2>SPIRAL_STARTUP.log
+          set ERR=%ERRORLEVEL%
+          if "%ERR%"=="0" exit /b 0
+          echo.
+          echo Spiral exited with code %ERR%.
+          echo --- SPIRAL_STARTUP.log ---
+          type SPIRAL_STARTUP.log
+          echo --------------------------
+          pause
+          exit /b %ERR%
+          :missingexe
+          echo ERROR: SpiralAIShell.exe is missing.
+          pause
+          exit /b 2
+          :missingruntime
+          echo ERROR: llama-cli.exe is missing.
+          pause
+          exit /b 2
+          :missingmodel
+          echo ERROR: Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf is missing.
+          pause
+          exit /b 2
+          '@ | Set-Content product/START_SPIRAL_DIAGNOSTIC.bat -Encoding ascii
+
           @'
           SPIRAL AI SHELL / WINDOWS X64 / L28 PATCHED TRANSFER BUILD
 
-          Double-click SpiralAIShell.exe to run.
-          Bundled: Qwen2.5-Coder-1.5B-Instruct Q4_K_M + pinned llama.cpp CPU runtime.
+          RECOMMENDED START:
+          Double-click START_SPIRAL_DIAGNOSTIC.bat.
 
-          This build includes the Spiral identity/project grounding work, stale refusal filtering, benign-prompt recovery, and Qwen role-framing work from the current L28 branch.
+          It pins Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf and llama-cli.exe and leaves
+          SPIRAL_STARTUP.log / SPIRAL_STDOUT.log if startup fails.
 
-          Known CI note: the strict coding-agent smoke assertion on this branch is still being tuned; this transfer package intentionally packages the compiled runnable build after core parser/XENON tests pass so it can be tested interactively.
-          '@ | Set-Content product/README.txt
+          This package includes the MSVC x64 runtime DLLs required by SpiralAIShell.exe,
+          the pinned llama.cpp CPU runtime, and the Qwen2.5 Coder 1.5B Q4_K_M model.
+          '@ | Set-Content product/START_HERE.txt
+      - name: Verify packaged dependencies
+        shell: pwsh
+        run: |
+          $required = @(
+            'SpiralAIShell.exe',
+            'llama-cli.exe',
+            'Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf',
+            'MSVCP140.dll',
+            'VCRUNTIME140.dll',
+            'VCRUNTIME140_1.dll'
+          )
+          foreach ($file in $required) {
+            if (!(Test-Path (Join-Path 'product' $file))) { throw "Packaged dependency missing: $file" }
+          }
+          Get-ChildItem product | Sort-Object Name | Format-Table Name,Length
+      - name: Real packaged startup smoke
+        shell: pwsh
+        run: |
+          Push-Location product
+          try {
+            $output = & .\SpiralAIShell.exe --model .\Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf --runtime .\llama-cli.exe --prompt "what is the future of spiral ai" 2>&1
+            $code = $LASTEXITCODE
+            $output | Write-Host
+            if ($code -ne 0) { throw "Packaged SpiralAIShell exited with code $code" }
+            $text = ($output -join "`n")
+            if ($text -notmatch '(?i)(XENON|ORGANIC|HAKUI|EtherBeat|EtherPlay|native inference|GGUF)') {
+              throw 'Packaged startup smoke returned ungrounded output'
+            }
+          } finally {
+            Pop-Location
+          }
       - name: Package full ZIP
         shell: pwsh
         run: Compress-Archive -Path product/* -DestinationPath Spiral-AI-Shell-L28-PATCHED-FULL-Windows-x64.zip -Force
