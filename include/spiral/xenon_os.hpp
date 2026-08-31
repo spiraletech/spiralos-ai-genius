@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -71,21 +72,42 @@ struct SpiralContext {
 
 struct CortexReply { bool ok = false; std::string text; std::string error; };
 
+class ICortexBackend {
+public:
+    virtual ~ICortexBackend() = default;
+    virtual bool configure(std::string model_path, std::string runtime_path, std::string* error = nullptr) noexcept = 0;
+    virtual void unload() noexcept = 0;
+    [[nodiscard]] virtual bool loaded() const noexcept = 0;
+    [[nodiscard]] virtual CortexState state() const noexcept = 0;
+    [[nodiscard]] virtual std::string_view name() const noexcept = 0;
+    [[nodiscard]] virtual const std::string& model_path() const noexcept = 0;
+    [[nodiscard]] virtual const std::string& runtime_path() const noexcept = 0;
+    [[nodiscard]] virtual const std::string& chat_template() const noexcept = 0;
+    [[nodiscard]] virtual CortexReply generate(const SpiralContext& context, std::string_view user_text,
+                                               std::size_t max_new_tokens, float temperature) const = 0;
+};
+
 class LocalCortex final {
 public:
+    LocalCortex() = default;
+    ~LocalCortex() = default;
+    LocalCortex(const LocalCortex&) = delete;
+    LocalCortex& operator=(const LocalCortex&) = delete;
+    LocalCortex(LocalCortex&&) noexcept = default;
+    LocalCortex& operator=(LocalCortex&&) noexcept = default;
+
     bool configure_gguf(std::string model_path, std::string runtime_path = {}, std::string* error = nullptr) noexcept;
     void unload() noexcept;
     [[nodiscard]] bool loaded() const noexcept;
     [[nodiscard]] CortexState state() const noexcept;
+    [[nodiscard]] std::string_view backend_name() const noexcept;
     [[nodiscard]] const std::string& model_path() const noexcept;
     [[nodiscard]] const std::string& runtime_path() const noexcept;
     [[nodiscard]] const std::string& chat_template() const noexcept;
     [[nodiscard]] CortexReply generate(const SpiralContext& context, std::string_view user_text,
                                        std::size_t max_new_tokens = 384, float temperature = 0.62F) const;
 private:
-    std::string model_path_;
-    std::string runtime_path_;
-    std::string chat_template_;
+    std::unique_ptr<ICortexBackend> backend_;
 };
 
 [[nodiscard]] std::string current_local_datetime();
