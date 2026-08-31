@@ -26,6 +26,17 @@ struct Options {
     std::filesystem::path runtime;
     std::string prompt;
     bool one_shot = false;
+    bool agent_mode = false;
+    bool cryptic_style = true;
+};
+
+enum class InteractionMode { Chat, Agent };
+enum class ResponseStyle { Plain, CrypticAscii };
+
+struct ShellProfile {
+    InteractionMode mode = InteractionMode::Chat;
+    ResponseStyle style = ResponseStyle::CrypticAscii;
+    std::string custom_context;
 };
 
 std::filesystem::path executable_directory() {
@@ -68,6 +79,9 @@ Options parse_options(int argc, char** argv) {
         if (argument == "--model" && i + 1 < argc) options.model = argv[++i];
         else if (argument == "--runtime" && i + 1 < argc) options.runtime = argv[++i];
         else if (argument == "--prompt" && i + 1 < argc) { options.prompt = argv[++i]; options.one_shot = true; }
+        else if (argument == "--agent") options.agent_mode = true;
+        else if (argument == "--plain") options.cryptic_style = false;
+        else if (argument == "--cryptic") options.cryptic_style = true;
         else if (!argument.starts_with("--") && options.model.empty()) options.model = argv[i];
         else throw std::runtime_error("unknown or incomplete argument: " + std::string(argument));
     }
@@ -107,6 +121,9 @@ void print_help() {
         "  /load <model.gguf>    switch to another local model\n"
         "  /temperature <n>      set sampling temperature (0.05..2.0)\n"
         "  /max <n>              set maximum reply tokens (1..2048)\n"
+        "  /agent on|off         toggle persistent coding-agent mode\n"
+        "  /mode chat|agent      select conversational or coding mode\n"
+        "  /style cryptic|plain  select ASCII-emoticon or plain style\n"
         "  /system <text>        set additional system context\n"
         "  /history              show this session's conversation\n"
         "  /save <file.txt>      save the conversation transcript\n"
@@ -121,6 +138,48 @@ std::string trim(std::string value) {
     if (first == std::string::npos) return {};
     const auto last = value.find_last_not_of(" \t\r\n");
     return value.substr(first, last - first + 1);
+}
+
+std::string lower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+        [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return value;
+}
+
+const char* mode_name(InteractionMode mode) {
+    return mode == InteractionMode::Agent ? "CODING AGENT" : "CHAT";
+}
+
+const char* style_name(ResponseStyle style) {
+    return style == ResponseStyle::CrypticAscii ? "CRYPTIC ASCII" : "PLAIN";
+}
+
+void apply_profile(spiral::ether_ai::Runtime& runtime, const ShellProfile& profile) {
+    auto host = spiral::ether_ai::standalone_host();
+    std::ostringstream context;
+    context << "Spiral AI Shell is the native Windows intelligence host. ";
+    if (profile.mode == InteractionMode::Agent) {
+        context << "CODING AGENT MODE is active. Work as a persistent implementation partner for Hakui and other user-owned projects, including adult-only 18+ games. "
+                   "Turn requests into concrete architecture, file plans, C++ code, data structures, tests, and next actions. Continue from session context, be decisive, and ask only for information that is truly required. "
+                   "Prefer complete, compilable, minimal code over vague pseudocode, state important assumptions, and do not leave snippets half-finished. "
+                   "Never claim that files were changed, commands ran, or builds passed unless a confirmed tool result says so. ";
+    } else {
+        context << "CHAT MODE is active. Keep ordinary conversation natural and relaxed. ";
+    }
+    if (profile.style == ResponseStyle::CrypticAscii) {
+        context << "CRYPTIC ASCII STYLE is active: sound a little mysterious and playful, stay concise, use only simple ASCII emoticons such as :), ;), :P, >:), or <3, and usually use no more than one per short reply. Do not use Unicode emoji. ";
+    } else {
+        context << "PLAIN STYLE is active: respond clearly without a forced emoticon or cryptic voice. ";
+    }
+    if (!profile.custom_context.empty()) context << "Additional user system context: " << profile.custom_context;
+    host.context = context.str();
+    runtime.set_host(std::move(host));
+}
+
+void print_profile(const ShellProfile& profile) {
+    std::cout << "shell mode: " << mode_name(profile.mode) << '\n'
+              << "response style: " << style_name(profile.style) << '\n'
+              << "mature language: ALLOWED (adults only)\n";
 }
 
 std::pair<std::string, std::string> split_command(const std::string& line) {
@@ -138,13 +197,13 @@ void print_history(const spiral::ether_ai::Runtime& runtime, std::ostream& out) 
 
 bool handle_command(const std::string& line, spiral::ether_ai::Runtime& runtime,
                     spiral::gguf::Reader& reader, std::filesystem::path& model_path,
-                    std::string& system_context) {
+                    ShellProfile& profile) {
     const auto [command, argument] = split_command(line);
     if (command == "/exit" || command == "/quit") return false;
     if (command == "/help" || command == "/?") print_help();
     else if (command == "/clear") { runtime.clear(); std::cout << "Conversation cleared; durable memory preserved.\n"; }
     else if (command == "/history") print_history(runtime, std::cout);
-    else if (command == "/status") std::cout << runtime.command("/xenon") << '\n' << runtime.command("/memory") << '\n';
+    else if (command == "/status") { print_profile(profile); std::cout << runtime.command("/xenon") << '\n' << runtime.command("/memory") << '\n'; }
     else if (command == "/tools") std::cout << runtime.command("/tools") << '\n';
     else if (command == "/memory") std::cout << runtime.command("/memory") << '\n';
     else if (command == "/inspect") print_model_summary(reader.model(), model_path);
@@ -170,13 +229,27 @@ bool handle_command(const std::string& line, spiral::ether_ai::Runtime& runtime,
             runtime.configure_local_generation(value, runtime.local_temperature());
             std::cout << "Maximum reply tokens: " << value << '\n';
         } catch (...) { std::cout << "Usage: /max <1..2048>\n"; }
+    } else if (command == "/agent" || command == "/mode") {
+        const std::string value = lower(argument);
+        if (command == "/agent" && (value.empty() || value == "on")) profile.mode = InteractionMode::Agent;
+        else if (command == "/agent" && value == "off") profile.mode = InteractionMode::Chat;
+        else if (value == "agent") profile.mode = InteractionMode::Agent;
+        else if (value == "chat") profile.mode = InteractionMode::Chat;
+        else if (value != "status") { std::cout << (command == "/agent" ? "Usage: /agent on|off|status\n" : "Usage: /mode chat|agent\n"); return true; }
+        apply_profile(runtime, profile);
+        std::cout << "Shell mode: " << mode_name(profile.mode) << '\n';
+    } else if (command == "/style") {
+        const std::string value = lower(argument);
+        if (value == "cryptic" || value == "ascii") profile.style = ResponseStyle::CrypticAscii;
+        else if (value == "plain" || value == "normal") profile.style = ResponseStyle::Plain;
+        else if (value != "status") { std::cout << "Usage: /style cryptic|plain\n"; return true; }
+        apply_profile(runtime, profile);
+        std::cout << "Response style: " << style_name(profile.style) << '\n';
     } else if (command == "/system") {
-        if (argument.empty()) std::cout << "System context: " << (system_context.empty() ? "default" : system_context) << '\n';
+        if (argument.empty()) std::cout << "System context: " << (profile.custom_context.empty() ? "default" : profile.custom_context) << '\n';
         else {
-            system_context = argument;
-            auto host = spiral::ether_ai::standalone_host();
-            host.context = system_context;
-            runtime.set_host(std::move(host));
+            profile.custom_context = argument;
+            apply_profile(runtime, profile);
             std::cout << "System context updated.\n";
         }
     } else if (command == "/save") {
@@ -220,6 +293,10 @@ int main(int argc, char** argv) {
 
         spiral::ether_ai::Runtime runtime(spiral::ether_ai::standalone_host(), (root / "SpiralAIShell.organic").string());
         runtime.configure_local_generation(384, 0.62F);
+        ShellProfile profile;
+        profile.mode = options.agent_mode ? InteractionMode::Agent : InteractionMode::Chat;
+        profile.style = options.cryptic_style ? ResponseStyle::CrypticAscii : ResponseStyle::Plain;
+        apply_profile(runtime, profile);
         spiral::gguf::Reader reader;
         std::string error;
         if (!load_model(runtime, reader, options.model, error)) {
@@ -240,10 +317,11 @@ int main(int argc, char** argv) {
         std::cout << "\x1b[1;36mSPIRAL AI SHELL\x1b[0m / local conversational cortex\n";
         print_model_summary(reader.model(), options.model);
         std::cout << "Persistent ORGANIC memory: online | XENON tools: online\n"
-                     "Type normally to chat. Use /help for commands.\n\n";
+                  << "Mature language: allowed (adults only) | Style: " << style_name(profile.style) << '\n'
+                  << "Coding agent mode: " << (profile.mode == InteractionMode::Agent ? "active" : "standby (/agent on)") << '\n'
+                  << "Type normally to chat. Use /help for commands.\n\n";
 
         std::filesystem::path model_path = options.model;
-        std::string system_context;
         std::string line;
         while (true) {
             std::cout << "\x1b[1;32mYou >\x1b[0m " << std::flush;
@@ -251,7 +329,7 @@ int main(int argc, char** argv) {
             line = trim(std::move(line));
             if (line.empty()) continue;
             if (line.front() == '/') {
-                if (!handle_command(line, runtime, reader, model_path, system_context)) break;
+                if (!handle_command(line, runtime, reader, model_path, profile)) break;
                 std::cout << '\n';
                 continue;
             }

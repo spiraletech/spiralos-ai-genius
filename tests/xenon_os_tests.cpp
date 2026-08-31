@@ -48,6 +48,9 @@ int main() {
     assert(prompt.find("TOOL_CALL") != std::string::npos);
     assert(prompt.find("A greeting needs only a friendly greeting") != std::string::npos);
     assert(prompt.find("Never invent packages") != std::string::npos);
+    assert(prompt.find("Mature language is allowed") != std::string::npos);
+    assert(prompt.find("uffff this is sexy") != std::string::npos);
+    assert(prompt.find("every sexual character and participant is an adult") != std::string::npos);
 
     const auto call = parse_tool_call("TOOL_CALL etherplay.analyze_audio track=test.wav mode=full");
     assert(call.has_value());
