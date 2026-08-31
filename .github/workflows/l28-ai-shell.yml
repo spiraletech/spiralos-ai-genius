@@ -28,13 +28,13 @@ jobs:
           curl.exe -L --fail --retry 3 "https://github.com/ggml-org/llama.cpp/releases/download/b10621/llama-b10621-bin-win-cpu-x64.zip" -o llama-runtime.zip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Expand-Archive llama-runtime.zip -DestinationPath llama-runtime -Force
-      - name: Fetch bundled Qwen2.5 1.5B model
+      - name: Fetch bundled Qwen2.5 Coder 1.5B model
         shell: pwsh
         run: |
-          curl.exe -L --fail --retry 3 "https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf?download=true" -o Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
+          curl.exe -L --fail --retry 3 "https://huggingface.co/bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf?download=true" -o Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if ((Get-Item Qwen2.5-1.5B-Instruct-Q4_K_M.gguf).Length -lt 900000000) { throw 'GGUF download is unexpectedly small' }
-          if ((Get-FileHash Qwen2.5-1.5B-Instruct-Q4_K_M.gguf -Algorithm SHA256).Hash -ne '1ADF0B11065D8AD2E8123EA110D1EC956DAB4AB038EAB665614ADBA04B6C3370') { throw 'Qwen GGUF checksum mismatch' }
+          if ((Get-Item Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf).Length -lt 900000000) { throw 'GGUF download is unexpectedly small' }
+          if ((Get-FileHash Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf -Algorithm SHA256).Hash -ne 'F530705D447660A4336C329981AF164B471B60B974B1D808D57E8EC9FE23B239') { throw 'Qwen Coder GGUF checksum mismatch' }
       - name: Assemble self-contained shell
         shell: pwsh
         run: |
@@ -44,14 +44,14 @@ jobs:
           if ($null -eq $llama) { throw 'llama-cli.exe missing from runtime archive' }
           Copy-Item $llama.FullName product/
           Get-ChildItem $llama.Directory.FullName -Filter *.dll | Copy-Item -Destination product -Force
-          Copy-Item Qwen2.5-1.5B-Instruct-Q4_K_M.gguf product/
+          Copy-Item Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf product/
           curl.exe -L --fail --retry 3 "https://raw.githubusercontent.com/ggml-org/llama.cpp/v0.3.0/LICENSE" -o product/LLAMA_CPP_LICENSE.txt
           curl.exe -L --fail --retry 3 "https://www.apache.org/licenses/LICENSE-2.0.txt" -o product/MODEL_LICENSE.txt
           @'
           SPIRAL AI SHELL / WINDOWS X64
 
           Double-click SpiralAIShell.exe and type normally to chat.
-          The Qwen2.5 1.5B Instruct local model and CPU runtime are included; no API key or installation is required.
+          The code-specialized Qwen2.5 Coder 1.5B Instruct local model and CPU runtime are included; no API key or installation is required.
 
           Commands: /help /status /inspect /load /temperature /max /agent /mode /style /system /history /save /clear /memory /tools /exit
 
@@ -63,7 +63,7 @@ jobs:
         shell: pwsh
         run: |
           $shell = (Resolve-Path product/SpiralAIShell.exe).Path
-          $model = (Resolve-Path product/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf).Path
+          $model = (Resolve-Path product/Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf).Path
           $llama = (Resolve-Path product/llama-cli.exe).Path
           $output = & $shell --model $model --runtime $llama --prompt "Reply to the greeting hello in one short friendly sentence. Do not provide code." 2>&1 | Out-String
           Write-Host $output
