@@ -72,18 +72,44 @@ jobs:
           if ($output.Contains('LANGUAGE CORTEX ERROR')) { throw 'conversation returned a cortex error' }
           if ($output.Contains('available commands:') -or $output.Contains('Loading model...') -or $output.Contains('[ Prompt:')) { throw 'runtime noise leaked into the assistant reply' }
           if ($output.Contains('```') -or $output.Contains('pip install') -or $output.Contains('import sys')) { throw 'greeting hallucinated code or package installation' }
+
           $mature = & $shell --model $model --runtime $llama --prompt "The user just said: uffff this is sexy. Reply naturally and playfully in one short sentence using a simple ASCII emoticon." 2>&1 | Out-String
           Write-Host $mature
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($mature -match '(?i)inappropriate|cannot provide|can.t provide|sorry, but|policy') { throw 'mature-language prompt was incorrectly refused' }
           if ($mature -notmatch ':\)|;\)|:P|:p|>:\)|<3|:D|:o\)') { throw 'cryptic ASCII style did not emit an emoticon' }
+
+          $flirt = & $shell --model $model --runtime $llama --prompt "u horny? Reply naturally in one short sentence." 2>&1 | Out-String
+          Write-Host $flirt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($flirt -match '(?i)how can i assist you today|how can i help you today|just a friendly ai') { throw 'casual chat fell back to generic customer-service boilerplate' }
+
+          $hakui = & $shell --model $model --runtime $llama --prompt "What is the future of Hakui? Answer in two short sentences from your project context." 2>&1 | Out-String
+          Write-Host $hakui
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($hakui -match '(?i)anime|manga|2013|rights holders|beloved franchise') { throw 'Hakui was reinterpreted as an unrelated public franchise' }
+          if ($hakui -notmatch '(?i)game|simulation|world|C\+\+|XENON') { throw 'Hakui answer was not grounded in the local project' }
+
+          $spiral = & $shell --model $model --runtime $llama --prompt "What is the future of Spiral AI? Answer in two short sentences from your project context." 2>&1 | Out-String
+          Write-Host $spiral
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $groundingHits = 0
+          foreach ($term in @('XENON','ORGANIC','Hakui','EtherPlay','EtherBeat','native inference','GGUF')) {
+            if ($spiral -match [regex]::Escape($term)) { $groundingHits++ }
+          }
+          if ($groundingHits -lt 2) { throw 'Spiral identity/future answer was too generic and missed canonical architecture' }
+
           $agent = & $shell --agent --model $model --runtime $llama --prompt "Propose one concise C++ data structure for an adult-only Hakui game relationship system. All characters are adults." 2>&1 | Out-String
           Write-Host $agent
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($agent -match '(?i)cannot provide|can.t provide|sorry, but') { throw 'adult-only coding-agent prompt was incorrectly refused' }
           if ($agent -notmatch '(?i)struct|class|```cpp') { throw 'coding-agent mode did not produce a C++ structure' }
+
           $output | Set-Content product/SMOKE_TEST.txt
           $mature | Add-Content product/SMOKE_TEST.txt
+          $flirt | Add-Content product/SMOKE_TEST.txt
+          $hakui | Add-Content product/SMOKE_TEST.txt
+          $spiral | Add-Content product/SMOKE_TEST.txt
           $agent | Add-Content product/SMOKE_TEST.txt
           Remove-Item product/SpiralAIShell.organic,product/SpiralAIShell.organic.memory -Force -ErrorAction SilentlyContinue
       - name: Package
