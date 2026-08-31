@@ -1,0 +1,40 @@
+name: L28A Native GGUF Reader
+
+on:
+  push:
+    branches: ["spiral/l28-native-inference-foundation"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure x64
+        run: cmake -S . -B build -A x64
+      - name: Build parser and tests
+        run: cmake --build build --config Release --target SpiralGGUFInspect spiral_gguf_tests
+      - name: Malformed-file unit tests
+        run: ctest --test-dir build -C Release --output-on-failure -R spiral_gguf_tests
+      - name: Download real SmolLM2 GGUF
+        shell: pwsh
+        run: |
+          curl.exe -L --fail --retry 3 "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf?download=true" -o SmolLM2.gguf
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((Get-Item SmolLM2.gguf).Length -lt 90000000) { throw 'downloaded GGUF is unexpectedly small' }
+      - name: Inspect real model natively
+        shell: pwsh
+        run: |
+          build/Release/SpiralGGUFInspect.exe SmolLM2.gguf | Tee-Object -FilePath inspection.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Select-String -Path inspection.txt -SimpleMatch 'general.architecture: llama'
+          Select-String -Path inspection.txt -Pattern '^tokenizer\.'
+          Select-String -Path inspection.txt -Pattern '^Tensor count: [1-9][0-9]*$'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: L28A-native-GGUF-inspector-windows-x64
+          path: |
+            build/Release/SpiralGGUFInspect.exe
+            inspection.txt
+          if-no-files-found: error

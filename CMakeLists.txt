@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(Threads REQUIRED)
 
 add_library(spiral_core STATIC
+    src/gguf.cpp
     src/tensor.cpp
     src/tokenizer.cpp
     src/random.cpp
@@ -74,6 +75,9 @@ target_link_libraries(spiral_genius PRIVATE spiral_core)
 add_executable(spiral_benchmark apps/benchmark/main.cpp)
 target_link_libraries(spiral_benchmark PRIVATE spiral_core)
 
+add_executable(SpiralGGUFInspect apps/gguf_inspect/main.cpp)
+target_link_libraries(SpiralGGUFInspect PRIVATE spiral_core)
+
 if(WIN32)
     add_executable(spiral_ether_ai WIN32
         apps/ether_ai/main.cpp
@@ -86,6 +90,10 @@ if(WIN32)
 endif()
 
 enable_testing()
+
+add_executable(spiral_gguf_tests tests/gguf_tests.cpp)
+target_link_libraries(spiral_gguf_tests PRIVATE spiral_core)
+add_test(NAME spiral_gguf_tests COMMAND spiral_gguf_tests)
 
 add_executable(spiral_core_tests tests/tensor_tests.cpp)
 target_link_libraries(spiral_core_tests PRIVATE spiral_core)
