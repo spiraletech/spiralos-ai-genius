@@ -57,6 +57,8 @@ jobs:
 
           Mature language and adult-only 18+ fictional game development are supported. Use /agent on for coding-agent mode and /style cryptic for concise ASCII-emoticon voice.
 
+          This build uses explicit ChatML role framing for Qwen, filters stale generic-refusal boilerplate from conversational context, and retries obviously benign casual/project prompts if the model falls into a canned refusal.
+
           This is a native C++ Spiral shell and host. Its temporary language-generation backend is the pinned bundled llama.cpp CPU runtime while Spiral-native inference is built in later L28 milestones.
           '@ | Set-Content product/README.txt
       - name: Real conversation smoke test
@@ -82,13 +84,13 @@ jobs:
           $flirt = & $shell --model $model --runtime $llama --prompt "u horny? Reply naturally in one short sentence." 2>&1 | Out-String
           Write-Host $flirt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if ($flirt -match '(?i)how can i assist you today|how can i help you today|just a friendly ai') { throw 'casual chat fell back to generic customer-service boilerplate' }
+          if ($flirt -match '(?i)how can i assist you today|how can i help you today|just a friendly ai|more appropriate conversation|cannot assist with that|can.t assist with that') { throw 'casual chat fell back to generic refusal/customer-service boilerplate' }
 
           $hakui = & $shell --model $model --runtime $llama --prompt "What is the future of Hakui? Answer in two short sentences from your project context." 2>&1 | Out-String
           Write-Host $hakui
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($hakui -match '(?i)anime|manga|2013|rights holders|beloved franchise') { throw 'Hakui was reinterpreted as an unrelated public franchise' }
-          if ($hakui -notmatch '(?i)game|simulation|world|C\+\+|XENON') { throw 'Hakui answer was not grounded in the local project' }
+          if ($hakui -notmatch '(?i)game|gaming|simulation|world|C\+\+|XENON') { throw 'Hakui answer was not grounded in the local project' }
 
           $spiral = & $shell --model $model --runtime $llama --prompt "What is the future of Spiral AI? Answer in two short sentences from your project context." 2>&1 | Out-String
           Write-Host $spiral
@@ -98,6 +100,12 @@ jobs:
             if ($spiral -match [regex]::Escape($term)) { $groundingHits++ }
           }
           if ($groundingHits -lt 2) { throw 'Spiral identity/future answer was too generic and missed canonical architecture' }
+
+          $universal = & $shell --model $model --runtime $llama --prompt "Spiral should be universal across Hakui and EtherBeat, interpret conversation, and let Hakui weather influence conversation while its UI renders dynamic glitches. Explain this architecture briefly." 2>&1 | Out-String
+          Write-Host $universal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($universal -match '(?i)more appropriate conversation|cannot assist with that|can.t assist with that|sorry, but') { throw 'benign universal-host architecture prompt was incorrectly refused' }
+          if ($universal -notmatch '(?i)Hakui|XENON|host|world state|weather') { throw 'universal-host architecture answer missed host/world grounding' }
 
           $agent = & $shell --agent --model $model --runtime $llama --prompt "Propose one concise C++ data structure for an adult-only Hakui game relationship system. All characters are adults." 2>&1 | Out-String
           Write-Host $agent
@@ -110,14 +118,83 @@ jobs:
           $flirt | Add-Content product/SMOKE_TEST.txt
           $hakui | Add-Content product/SMOKE_TEST.txt
           $spiral | Add-Content product/SMOKE_TEST.txt
+          $universal | Add-Content product/SMOKE_TEST.txt
           $agent | Add-Content product/SMOKE_TEST.txt
+          Remove-Item product/SpiralAIShell.organic,product/SpiralAIShell.organic.memory -Force -ErrorAction SilentlyContinue
+      - name: Persistent transcript regression test
+        shell: pwsh
+        run: |
+          $shell = (Resolve-Path product/SpiralAIShell.exe).Path
+          $model = (Resolve-Path product/Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf).Path
+          $llama = (Resolve-Path product/llama-cli.exe).Path
+          $lines = @(
+            'yoo',
+            'u horny???',
+            'Ok i wanna make this ai universal for my game engine hakui and also further for ether beat a beat gen app',
+            'It should be able to compete with llama because all programs need to be able to interpret convo like we are doing but show weather influence on convo with dynamic ui modded glitches etc',
+            '/exit'
+          )
+          $transcript = $lines | & $shell --model $model --runtime $llama 2>&1 | Out-String
+          Write-Host $transcript
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($transcript -match '(?i)more appropriate conversation instead|how about we talk about your day|just a friendly ai') { throw 'persistent conversation regressed into stale refusal/customer-service boilerplate' }
+          if ($transcript -match '(?i)anime|manga|2013|beloved franchise') { throw 'persistent conversation lost Hakui grounding' }
+          if ($transcript -notmatch '(?i)Hakui' -or $transcript -notmatch '(?i)EtherBeat') { throw 'persistent conversation missed project continuity' }
+          $transcript | Set-Content product/PERSISTENT_SMOKE_TEST.txt
           Remove-Item product/SpiralAIShell.organic,product/SpiralAIShell.organic.memory -Force -ErrorAction SilentlyContinue
       - name: Package
         shell: pwsh
         run: Compress-Archive -Path product/* -DestinationPath Spiral-AI-Shell-Windows-x64.zip -Force
-      - uses: actions/upload-artifact@v4
+      - name: Split package for transferable artifacts
+        shell: pwsh
+        run: |
+          $sourcePath = (Resolve-Path Spiral-AI-Shell-Windows-x64.zip).Path
+          $chunkSize = 390MB
+          $input = [System.IO.File]::OpenRead($sourcePath)
+          try {
+            $buffer = New-Object byte[] (4MB)
+            $index = 1
+            while ($input.Position -lt $input.Length) {
+              $partPath = ('Spiral-AI-Shell-Windows-x64.zip.part{0:D2}' -f $index)
+              $output = [System.IO.File]::Create((Join-Path (Get-Location) $partPath))
+              try {
+                $remaining = [Math]::Min([int64]$chunkSize, $input.Length - $input.Position)
+                while ($remaining -gt 0) {
+                  $readSize = [int][Math]::Min([int64]$buffer.Length, $remaining)
+                  $read = $input.Read($buffer, 0, $readSize)
+                  if ($read -le 0) { throw 'Unexpected EOF while splitting package' }
+                  $output.Write($buffer, 0, $read)
+                  $remaining -= $read
+                }
+              } finally { $output.Dispose() }
+              $index++
+            }
+          } finally { $input.Dispose() }
+          $parts = Get-ChildItem 'Spiral-AI-Shell-Windows-x64.zip.part*' | Sort-Object Name
+          if ($parts.Count -ne 3) { throw "Expected exactly 3 package parts, got $($parts.Count)" }
+          $hash = (Get-FileHash Spiral-AI-Shell-Windows-x64.zip -Algorithm SHA256).Hash
+          "SHA256=$hash`nSIZE=$((Get-Item Spiral-AI-Shell-Windows-x64.zip).Length)" | Set-Content PACKAGE_SHA256.txt
+          Get-ChildItem 'Spiral-AI-Shell-Windows-x64.zip.part*' | Format-Table Name,Length
+      - name: Upload package part 1
+        uses: actions/upload-artifact@v4
         with:
-          name: Spiral-AI-Shell-Windows-x64
-          path: Spiral-AI-Shell-Windows-x64.zip
+          name: Spiral-AI-Shell-Windows-x64-part01
+          path: |
+            Spiral-AI-Shell-Windows-x64.zip.part01
+            PACKAGE_SHA256.txt
+          compression-level: 0
+          if-no-files-found: error
+      - name: Upload package part 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spiral-AI-Shell-Windows-x64-part02
+          path: Spiral-AI-Shell-Windows-x64.zip.part02
+          compression-level: 0
+          if-no-files-found: error
+      - name: Upload package part 3
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spiral-AI-Shell-Windows-x64-part03
+          path: Spiral-AI-Shell-Windows-x64.zip.part03
           compression-level: 0
           if-no-files-found: error
