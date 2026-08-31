@@ -11,6 +11,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <system_error>
+#include <vector>
 
 #ifdef _WIN32
 #define NOMINMAX
@@ -57,20 +58,61 @@ std::filesystem::path prompt_path() {
 
 std::string read_process(const std::string& command, int& exit_code) {
 #ifdef _WIN32
-    FILE* pipe = _popen(command.c_str(), "r");
+    SECURITY_ATTRIBUTES security{};
+    security.nLength = sizeof(security);
+    security.bInheritHandle = TRUE;
+    HANDLE read_pipe = nullptr;
+    HANDLE write_pipe = nullptr;
+    if (!CreatePipe(&read_pipe, &write_pipe, &security, 0))
+        throw std::runtime_error("failed to create local cortex output pipe");
+    if (!SetHandleInformation(read_pipe, HANDLE_FLAG_INHERIT, 0)) {
+        CloseHandle(read_pipe);
+        CloseHandle(write_pipe);
+        throw std::runtime_error("failed to secure local cortex output pipe");
+    }
+
+    STARTUPINFOA startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdOutput = write_pipe;
+    startup.hStdError = write_pipe;
+    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    PROCESS_INFORMATION process{};
+    std::vector<char> command_line(command.begin(), command.end());
+    command_line.push_back('\0');
+    const BOOL created = CreateProcessA(nullptr, command_line.data(), nullptr, nullptr, TRUE,
+        CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process);
+    CloseHandle(write_pipe);
+    if (!created) {
+        const DWORD code = GetLastError();
+        CloseHandle(read_pipe);
+        throw std::runtime_error("failed to launch local cortex runtime (Win32 error " + std::to_string(code) + ")");
+    }
+
+    std::string output;
+    char buffer[4096];
+    for (;;) {
+        DWORD count = 0;
+        if (!ReadFile(read_pipe, buffer, static_cast<DWORD>(sizeof(buffer)), &count, nullptr) || count == 0) break;
+        output.append(buffer, buffer + count);
+    }
+    WaitForSingleObject(process.hProcess, INFINITE);
+    DWORD process_exit = 1;
+    (void)GetExitCodeProcess(process.hProcess, &process_exit);
+    exit_code = static_cast<int>(process_exit);
+    CloseHandle(read_pipe);
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return output;
 #else
     FILE* pipe = popen(command.c_str(), "r");
-#endif
     if (!pipe) throw std::runtime_error("failed to launch local cortex runtime");
     std::string output;
     char buffer[4096];
     while (std::fgets(buffer, static_cast<int>(sizeof(buffer)), pipe) != nullptr) output += buffer;
-#ifdef _WIN32
-    exit_code = _pclose(pipe);
-#else
     exit_code = pclose(pipe);
-#endif
     return output;
+#endif
 }
 
 std::string normalized_host(std::string_view host) {
@@ -239,7 +281,9 @@ CortexReply LocalCortex::generate(const SpiralContext& context, std::string_view
                 << " -n " << max_new_tokens << " --temp " << std::fixed << std::setprecision(2) << temperature
                 << " -c 4096 -st --simple-io --top-k 40 --top-p 0.90 --min-p 0.05 --repeat-penalty 1.08 --no-display-prompt";
         if (!chat_template_.empty() && chat_template_ != "auto") command << " --chat-template " << quote_shell(chat_template_);
+#ifndef _WIN32
         command << " 2>&1";
+#endif
         int exit_code=0;
         std::string output=read_process(command.str(),exit_code);
         std::error_code ignored; std::filesystem::remove(temp,ignored);
