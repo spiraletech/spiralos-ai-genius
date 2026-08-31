@@ -40,9 +40,8 @@ jobs:
           Copy-Item $llama.FullName product/
           Get-ChildItem $llama.Directory.FullName -Filter *.dll | Copy-Item -Destination product -Force
 
-          # SpiralAIShell.exe is built with the MSVC dynamic CRT. Bundle the exact
-          # redistributable DLL family beside the EXE so a clean Windows machine does
-          # not require a separately installed VC++ Redistributable just to launch.
+          # Bundle the MSVC dynamic CRT beside the product so startup works on a
+          # clean Windows machine without relying on a preinstalled VC++ runtime.
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           if (!(Test-Path $vswhere)) { throw 'vswhere.exe not found on Windows runner' }
           $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
@@ -62,25 +61,38 @@ jobs:
           @echo off
           setlocal
           cd /d "%~dp0"
+          set "MODEL=%CD%\Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf"
+          set "RUNTIME=%CD%\llama-cli.exe"
+          set "SHELL=%CD%\SpiralAIShell.exe"
           echo SPIRAL L28 STARTUP
           echo Folder: %CD%
           echo.
-          if not exist "SpiralAIShell.exe" goto missingexe
-          if not exist "llama-cli.exe" goto missingruntime
-          if not exist "Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf" goto missingmodel
-          echo Launching pinned Qwen2.5 Coder model...
-          echo If Spiral exits, diagnostics will be written to SPIRAL_STARTUP.log.
+          if not exist "%SHELL%" goto missingexe
+          if not exist "%RUNTIME%" goto missingruntime
+          if not exist "%MODEL%" goto missingmodel
+
+          echo Running startup self-test...
+          "%SHELL%" --model "%MODEL%" --runtime "%RUNTIME%" --prompt "Reply with Spiral startup ready and name XENON." 1>SPIRAL_SELFTEST.log 2>SPIRAL_STARTUP.log
+          set ERR=%ERRORLEVEL%
+          if not "%ERR%"=="0" goto failed
+
+          echo Self-test passed. Opening interactive Spiral shell...
           echo.
-          "SpiralAIShell.exe" --model "Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf" --runtime "llama-cli.exe" 1>SPIRAL_STDOUT.log 2>SPIRAL_STARTUP.log
+          "%SHELL%" --model "%MODEL%" --runtime "%RUNTIME%"
           set ERR=%ERRORLEVEL%
           if "%ERR%"=="0" exit /b 0
+
+          :failed
           echo.
           echo Spiral exited with code %ERR%.
           echo --- SPIRAL_STARTUP.log ---
-          type SPIRAL_STARTUP.log
+          if exist SPIRAL_STARTUP.log type SPIRAL_STARTUP.log
+          echo --- SPIRAL_SELFTEST.log ---
+          if exist SPIRAL_SELFTEST.log type SPIRAL_SELFTEST.log
           echo --------------------------
           pause
           exit /b %ERR%
+
           :missingexe
           echo ERROR: SpiralAIShell.exe is missing.
           pause
@@ -101,11 +113,12 @@ jobs:
           RECOMMENDED START:
           Double-click START_SPIRAL_DIAGNOSTIC.bat.
 
-          It pins Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf and llama-cli.exe and leaves
-          SPIRAL_STARTUP.log / SPIRAL_STDOUT.log if startup fails.
+          The launcher first runs a one-shot startup self-test with the pinned Coder
+          model/runtime. If that succeeds it opens the real interactive shell normally.
+          If startup fails, SPIRAL_STARTUP.log and SPIRAL_SELFTEST.log remain beside it.
 
-          This package includes the MSVC x64 runtime DLLs required by SpiralAIShell.exe,
-          the pinned llama.cpp CPU runtime, and the Qwen2.5 Coder 1.5B Q4_K_M model.
+          This package bundles the MSVC x64 runtime DLLs required by SpiralAIShell.exe,
+          the pinned llama.cpp CPU runtime, and Qwen2.5 Coder 1.5B Q4_K_M.
           '@ | Set-Content product/START_HERE.txt
       - name: Verify packaged dependencies
         shell: pwsh
@@ -116,7 +129,8 @@ jobs:
             'Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf',
             'MSVCP140.dll',
             'VCRUNTIME140.dll',
-            'VCRUNTIME140_1.dll'
+            'VCRUNTIME140_1.dll',
+            'START_SPIRAL_DIAGNOSTIC.bat'
           )
           foreach ($file in $required) {
             if (!(Test-Path (Join-Path 'product' $file))) { throw "Packaged dependency missing: $file" }
