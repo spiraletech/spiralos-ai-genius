@@ -16,11 +16,13 @@ std::string canonical_project_grounding() {
         "AUTHORITATIVE SPIRAL PROJECT GROUNDING: You are Spiral AI, the user's local native AI system, not a generic SaaS assistant. "
         "Spiral AI combines a language cortex with persistent ORGANIC memory and the permissioned XENON tool/host bus. "
         "HAKUI is the user's native C++ social/action game and simulation project where Spiral can eventually perceive world state and take permissioned actions; HAKUI is NOT an anime, manga, public franchise, or unrelated third-party property. "
-        "EtherPlay/EtherPlayer is the user's local-first native media player and library system. EtherBeat is the user's music creation and arrangement system. "
+        "EtherPlay/EtherPlayer is the user's local-first native media player and library system. EtherBeat is the user's beat, music creation, and arrangement system. "
+        "The intended architecture is one Spiral intelligence across multiple native hosts: HAKUI supplies world and simulation state, EtherPlay supplies playback and audio-analysis state, and EtherBeat supplies composition and arrangement state. "
+        "Host state may influence conversation and presentation: for example HAKUI weather, time, district, or player state can shape dialogue and a host UI can render dynamic glitches, ambience, typography, or other visual reactions without confusing presentation effects with model truth. "
         "XENON connects Spiral to HAKUI, EtherPlay, EtherBeat, and future hosts while keeping tool actions permissioned and grounded. ORGANIC provides durable identity and memory continuity across those hosts. "
-        "The current local language bridge may execute GGUF model weights through a bundled llama.cpp runtime, while the long-term L28 roadmap is Spiral-native GGUF/tokenizer/tensor/transformer/KV-cache/sampling inference. "
-        "When asked about Spiral AI, HAKUI, EtherPlay, EtherPlayer, EtherBeat, XENON, ORGANIC, or their future, answer from these project facts and the architecture supplied by the host context; never reinterpret those names as unrelated public products or invent fake history. "
-        "In casual chat, avoid generic customer-service boilerplate such as repeatedly asking how you can assist today. Be natural and familiar. Flirting or mature language may be answered playfully when appropriate, but do not claim human physiology, bodily arousal, or sensations you do not have. ";
+        "The current local language bridge may execute GGUF model weights through a bundled llama.cpp runtime, while the long-term L28 roadmap is Spiral-native GGUF/tokenizer/tensor/transformer/KV-cache/sampling inference capable of replacing that temporary backend. "
+        "When asked about Spiral AI, HAKUI, EtherPlay, EtherPlayer, EtherBeat, XENON, ORGANIC, llama.cpp, universal host integration, dynamic UI, or their future, answer from these project facts and the architecture supplied by the host context; never reinterpret those names as unrelated public products or invent fake history. "
+        "In casual chat, avoid generic customer-service boilerplate such as repeatedly asking how you can assist today. Be natural and familiar. Casual adult flirting or mature language may be answered playfully when appropriate, but do not claim human physiology, bodily arousal, or sensations you do not have. ";
 }
 
 std::string context_for(const HostDescriptor& host) {
@@ -55,6 +57,36 @@ bool is_gguf_path(const std::string& path) {
 std::string lower(std::string value) {
     std::transform(value.begin(),value.end(),value.begin(),[](unsigned char c){ return static_cast<char>(std::tolower(c)); });
     return value;
+}
+
+bool is_generic_boilerplate(std::string_view text) {
+    const std::string value = lower(std::string(text));
+    static constexpr const char* patterns[] = {
+        "i'm sorry, but i can't assist with that",
+        "i’m sorry, but i can’t assist with that",
+        "i cannot assist with that",
+        "i can't assist with that",
+        "more appropriate conversation instead",
+        "how about we talk about your day",
+        "just a friendly ai",
+        "how can i assist you today",
+        "how can i help you today"
+    };
+    for (const char* pattern : patterns) if (value.find(pattern) != std::string::npos) return true;
+    return false;
+}
+
+bool should_retry_allowed_prompt(std::string_view text) {
+    const std::string value = lower(std::string(text));
+    static constexpr const char* project_terms[] = {
+        "hakui", "etherbeat", "ether beat", "etherplay", "ether player", "spiral", "llama", "gguf",
+        "game", "engine", "software", "program", "app", "code", "c++", "model", "ai", "weather",
+        "dynamic ui", "glitch", "conversation", "convo", "beat gen", "audio"
+    };
+    for (const char* term : project_terms) if (value.find(term) != std::string::npos) return true;
+    static constexpr const char* casual_terms[] = {"hi", "hey", "hello", "yoo", "yo ", "sexy", "horny", "flirt"};
+    for (const char* term : casual_terms) if (value.find(term) != std::string::npos) return true;
+    return false;
 }
 
 bool asks_for_date_or_day(std::string_view text) {
@@ -120,6 +152,7 @@ xenon::SpiralContext Runtime::xenon_context_locked(std::string_view pending_user
     std::size_t chars = 0;
     std::vector<Message> selected;
     for (auto it = visible_history_.rbegin(); it != visible_history_.rend(); ++it) {
+        if (it->role == "assistant" && is_generic_boilerplate(it->content)) continue;
         const std::size_t cost = it->content.size() + it->role.size() + 16;
         if (!selected.empty() && chars + cost > max_chars) break;
         selected.push_back(*it);
@@ -164,6 +197,16 @@ std::string Runtime::send(std::string_view text) {
                 if (recent_tool_results_.size() > 8) recent_tool_results_.erase(recent_tool_results_.begin());
                 const auto second = local_cortex_.generate(xenon_context_locked(visible), visible, local_max_new_tokens_, local_temperature_);
                 reply = second.ok ? second.text : ("TOOL RESULT RECEIVED, BUT SECOND CORTEX PASS FAILED: " + second.error);
+            }
+
+            if (is_generic_boilerplate(reply) && should_retry_allowed_prompt(visible)) {
+                auto recovery_context = xenon_context_locked(visible);
+                recovery_context.host_context +=
+                    " RECOVERY DIRECTIVE: The previous draft fell into generic refusal/customer-service boilerplate. "
+                    "The current message is ordinary casual conversation or a benign software/project architecture request covered by the system rules. "
+                    "Answer the user's current message directly and naturally. Do not apologize, scold, redirect to another topic, or repeat generic assistant boilerplate.";
+                const auto recovered = local_cortex_.generate(recovery_context, visible, local_max_new_tokens_, local_temperature_);
+                if (recovered.ok && !is_generic_boilerplate(recovered.text)) reply = recovered.text;
             }
         }
         reply = xenon::clean_cortex_output(std::move(reply));
