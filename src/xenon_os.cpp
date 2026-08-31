@@ -8,14 +8,20 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <limits>
+#include <memory>
+#include <mutex>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
+#include <winhttp.h>
 #endif
 
 namespace spiral::xenon {
@@ -231,7 +237,433 @@ std::string build_chatml_prompt(const SpiralContext& context, std::string_view u
     return prompt.str();
 }
 
+std::string json_escape(std::string_view value) {
+    std::ostringstream out;
+    for (const unsigned char ch : value) {
+        switch (ch) {
+            case '"': out << "\\\""; break;
+            case '\\': out << "\\\\"; break;
+            case '\b': out << "\\b"; break;
+            case '\f': out << "\\f"; break;
+            case '\n': out << "\\n"; break;
+            case '\r': out << "\\r"; break;
+            case '\t': out << "\\t"; break;
+            default:
+                if (ch < 0x20) {
+                    out << "\\u" << std::hex << std::setw(4) << std::setfill('0') << static_cast<unsigned>(ch)
+                        << std::dec << std::setfill(' ');
+                } else out << static_cast<char>(ch);
+                break;
+        }
+    }
+    return out.str();
+}
+
+int hex_value(char ch) {
+    if (ch >= '0' && ch <= '9') return ch - '0';
+    if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+    if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+    return -1;
+}
+
+void append_utf8(std::string& out, unsigned codepoint) {
+    if (codepoint <= 0x7F) out.push_back(static_cast<char>(codepoint));
+    else if (codepoint <= 0x7FF) {
+        out.push_back(static_cast<char>(0xC0 | (codepoint >> 6)));
+        out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    } else if (codepoint <= 0xFFFF) {
+        out.push_back(static_cast<char>(0xE0 | (codepoint >> 12)));
+        out.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    } else if (codepoint <= 0x10FFFF) {
+        out.push_back(static_cast<char>(0xF0 | (codepoint >> 18)));
+        out.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    }
+}
+
+std::optional<std::string> json_string_field(std::string_view json, std::string_view key) {
+    const std::string needle = "\"" + std::string(key) + "\"";
+    std::size_t pos = json.find(needle);
+    if (pos == std::string_view::npos) return std::nullopt;
+    pos = json.find(':', pos + needle.size());
+    if (pos == std::string_view::npos) return std::nullopt;
+    ++pos;
+    while (pos < json.size() && std::isspace(static_cast<unsigned char>(json[pos]))) ++pos;
+    if (pos >= json.size() || json[pos] != '"') return std::nullopt;
+    ++pos;
+    std::string out;
+    while (pos < json.size()) {
+        const char ch = json[pos++];
+        if (ch == '"') return out;
+        if (ch != '\\') { out.push_back(ch); continue; }
+        if (pos >= json.size()) return std::nullopt;
+        const char esc = json[pos++];
+        switch (esc) {
+            case '"': out.push_back('"'); break;
+            case '\\': out.push_back('\\'); break;
+            case '/': out.push_back('/'); break;
+            case 'b': out.push_back('\b'); break;
+            case 'f': out.push_back('\f'); break;
+            case 'n': out.push_back('\n'); break;
+            case 'r': out.push_back('\r'); break;
+            case 't': out.push_back('\t'); break;
+            case 'u': {
+                if (pos + 4 > json.size()) return std::nullopt;
+                unsigned codepoint = 0;
+                for (int i = 0; i < 4; ++i) {
+                    const int value = hex_value(json[pos++]);
+                    if (value < 0) return std::nullopt;
+                    codepoint = (codepoint << 4U) | static_cast<unsigned>(value);
+                }
+                append_utf8(out, codepoint);
+                break;
+            }
+            default: return std::nullopt;
+        }
+    }
+    return std::nullopt;
+}
+
+#ifdef _WIN32
+struct HttpResult {
+    bool transport_ok = false;
+    DWORD status = 0;
+    std::string body;
+    std::string error;
+};
+
+HttpResult http_request(INTERNET_PORT port, const wchar_t* method, const wchar_t* path, std::string_view body = {}) {
+    HttpResult result;
+    HINTERNET session = WinHttpOpen(L"SpiralCortex/1.0", WINHTTP_ACCESS_TYPE_NO_PROXY,
+                                    WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!session) { result.error = "WinHttpOpen failed: " + std::to_string(GetLastError()); return result; }
+    (void)WinHttpSetTimeouts(session, 5000, 5000, 5000, 180000);
+    HINTERNET connection = WinHttpConnect(session, L"127.0.0.1", port, 0);
+    if (!connection) {
+        result.error = "WinHttpConnect failed: " + std::to_string(GetLastError());
+        WinHttpCloseHandle(session);
+        return result;
+    }
+    HINTERNET request = WinHttpOpenRequest(connection, method, path, nullptr, WINHTTP_NO_REFERER,
+                                           WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
+    if (!request) {
+        result.error = "WinHttpOpenRequest failed: " + std::to_string(GetLastError());
+        WinHttpCloseHandle(connection);
+        WinHttpCloseHandle(session);
+        return result;
+    }
+    const wchar_t* headers = body.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : L"Content-Type: application/json\r\n";
+    const DWORD header_length = body.empty() ? 0 : static_cast<DWORD>(-1L);
+    LPVOID optional = body.empty() ? WINHTTP_NO_REQUEST_DATA : const_cast<char*>(body.data());
+    const DWORD optional_length = static_cast<DWORD>(body.size());
+    if (!WinHttpSendRequest(request, headers, header_length, optional, optional_length, optional_length, 0) ||
+        !WinHttpReceiveResponse(request, nullptr)) {
+        result.error = "WinHTTP request failed: " + std::to_string(GetLastError());
+        WinHttpCloseHandle(request);
+        WinHttpCloseHandle(connection);
+        WinHttpCloseHandle(session);
+        return result;
+    }
+    DWORD status_size = sizeof(result.status);
+    (void)WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                              WINHTTP_HEADER_NAME_BY_INDEX, &result.status, &status_size, WINHTTP_NO_HEADER_INDEX);
+    for (;;) {
+        DWORD available = 0;
+        if (!WinHttpQueryDataAvailable(request, &available)) {
+            result.error = "WinHttpQueryDataAvailable failed: " + std::to_string(GetLastError());
+            break;
+        }
+        if (available == 0) { result.transport_ok = true; break; }
+        const std::size_t old_size = result.body.size();
+        result.body.resize(old_size + available);
+        DWORD read = 0;
+        if (!WinHttpReadData(request, result.body.data() + old_size, available, &read)) {
+            result.error = "WinHttpReadData failed: " + std::to_string(GetLastError());
+            result.body.resize(old_size);
+            break;
+        }
+        result.body.resize(old_size + read);
+    }
+    WinHttpCloseHandle(request);
+    WinHttpCloseHandle(connection);
+    WinHttpCloseHandle(session);
+    return result;
+}
+#endif
+
+const std::string& empty_string() {
+    static const std::string value;
+    return value;
+}
+
 } // namespace
+
+class LegacyCliBackend final : public ICortexBackend {
+public:
+    bool configure(std::string model_path, std::string runtime_path, std::string* error) noexcept override {
+        try {
+            if (model_path.empty()) throw std::runtime_error("GGUF model path is empty");
+            if (lower(std::filesystem::path(model_path).extension().string()) != ".gguf")
+                throw std::runtime_error("local cortex expects a .gguf instruct model");
+            if (!std::filesystem::exists(model_path))
+                throw std::runtime_error("GGUF model file does not exist: " + model_path);
+            if (runtime_path.empty()) runtime_path = env_or_empty("SPIRAL_LLAMA_EXE");
+            if (runtime_path.empty()) runtime_path = "llama-cli.exe";
+            model_path_ = std::move(model_path);
+            runtime_path_ = std::move(runtime_path);
+            chat_template_ = detect_template(model_path_);
+            if (error) error->clear();
+            return true;
+        } catch (const std::exception& ex) { if (error) *error = ex.what(); return false; }
+        catch (...) { if (error) *error = "unknown legacy cortex configuration failure"; return false; }
+    }
+
+    void unload() noexcept override { model_path_.clear(); runtime_path_.clear(); chat_template_.clear(); }
+    [[nodiscard]] bool loaded() const noexcept override { return !model_path_.empty(); }
+    [[nodiscard]] CortexState state() const noexcept override { return loaded() ? CortexState::Ready : CortexState::Offline; }
+    [[nodiscard]] std::string_view name() const noexcept override { return "legacy-cli"; }
+    [[nodiscard]] const std::string& model_path() const noexcept override { return model_path_; }
+    [[nodiscard]] const std::string& runtime_path() const noexcept override { return runtime_path_; }
+    [[nodiscard]] const std::string& chat_template() const noexcept override { return chat_template_; }
+
+    [[nodiscard]] CortexReply generate(const SpiralContext& context, std::string_view user_text,
+                                       std::size_t max_new_tokens, float temperature) const override {
+        if (!loaded()) return CortexReply{false,{},"legacy cortex has no GGUF model configured"};
+        const auto temp = prompt_path();
+        try {
+            const bool manual_chatml = chat_template_ == "chatml";
+            const std::string prompt_text = manual_chatml ? build_chatml_prompt(context,user_text)
+                                                           : build_cortex_prompt(context,user_text);
+            { std::ofstream out(temp,std::ios::binary|std::ios::trunc); if(!out) throw std::runtime_error("failed to create local cortex prompt file"); out << prompt_text; }
+            std::ostringstream command;
+            command << quote_shell(runtime_path_) << " -m " << quote_shell(model_path_) << " -f " << quote_shell(temp.string())
+                    << " -n " << max_new_tokens << " --temp " << std::fixed << std::setprecision(2) << temperature
+                    << " -c 4096 -st --simple-io --top-k 40 --top-p 0.90 --min-p 0.05 --repeat-penalty 1.08 --no-display-prompt";
+            if (!manual_chatml && !chat_template_.empty() && chat_template_ != "auto")
+                command << " --chat-template " << quote_shell(chat_template_);
+#ifndef _WIN32
+            command << " 2>&1";
+#endif
+            for (int attempt = 0; attempt < 2; ++attempt) {
+                int exit_code=0;
+                std::string output=read_process(command.str(),exit_code);
+                if(exit_code!=0) {
+                    std::error_code ignored;
+                    std::filesystem::remove(temp,ignored);
+                    return CortexReply{false,{},"legacy llama-cli runtime failed: " + clean_cortex_output(output)};
+                }
+                output=clean_cortex_output(std::move(output));
+                if(!output.empty()) {
+                    std::error_code ignored;
+                    std::filesystem::remove(temp,ignored);
+                    return CortexReply{true,std::move(output),{}};
+                }
+            }
+            { std::error_code ignored; std::filesystem::remove(temp,ignored); }
+            return CortexReply{false,{},"legacy llama-cli runtime emitted no text after retry"};
+        } catch(const std::exception& ex){
+            std::error_code ignored;
+            std::filesystem::remove(temp,ignored);
+            return CortexReply{false,{},ex.what()};
+        }
+    }
+
+private:
+    std::string model_path_;
+    std::string runtime_path_;
+    std::string chat_template_;
+};
+
+class PersistentLlamaBackend final : public ICortexBackend {
+public:
+    ~PersistentLlamaBackend() override { unload(); }
+
+    bool configure(std::string model_path, std::string runtime_path, std::string* error) noexcept override {
+        unload();
+        try {
+            if (model_path.empty()) throw std::runtime_error("GGUF model path is empty");
+            if (lower(std::filesystem::path(model_path).extension().string()) != ".gguf")
+                throw std::runtime_error("persistent cortex expects a .gguf instruct model");
+            if (!std::filesystem::exists(model_path))
+                throw std::runtime_error("GGUF model file does not exist: " + model_path);
+            if (runtime_path.empty()) runtime_path = env_or_empty("SPIRAL_LLAMA_SERVER_EXE");
+#ifdef _WIN32
+            if (runtime_path.empty()) runtime_path = "llama-server.exe";
+            if (!std::filesystem::exists(runtime_path))
+                throw std::runtime_error("persistent llama server does not exist: " + runtime_path);
+            model_path_ = std::move(model_path);
+            runtime_path_ = std::move(runtime_path);
+            chat_template_ = detect_template(model_path_);
+            std::string launch_error;
+            if (!launch_server(&launch_error)) throw std::runtime_error(launch_error);
+            if (error) error->clear();
+            return true;
+#else
+            (void)model_path;
+            (void)runtime_path;
+            throw std::runtime_error("PersistentLlamaBackend is currently implemented for Windows");
+#endif
+        } catch (const std::exception& ex) {
+            unload();
+            if (error) *error = ex.what();
+            return false;
+        } catch (...) {
+            unload();
+            if (error) *error = "unknown persistent cortex configuration failure";
+            return false;
+        }
+    }
+
+    void unload() noexcept override {
+#ifdef _WIN32
+        stop_server();
+#endif
+        model_path_.clear();
+        runtime_path_.clear();
+        chat_template_.clear();
+        loaded_ = false;
+    }
+
+    [[nodiscard]] bool loaded() const noexcept override { return loaded_; }
+    [[nodiscard]] CortexState state() const noexcept override { return loaded_ ? CortexState::Ready : CortexState::Offline; }
+    [[nodiscard]] std::string_view name() const noexcept override { return "persistent-llama-server"; }
+    [[nodiscard]] const std::string& model_path() const noexcept override { return model_path_; }
+    [[nodiscard]] const std::string& runtime_path() const noexcept override { return runtime_path_; }
+    [[nodiscard]] const std::string& chat_template() const noexcept override { return chat_template_; }
+
+    [[nodiscard]] CortexReply generate(const SpiralContext& context, std::string_view user_text,
+                                       std::size_t max_new_tokens, float temperature) const override {
+#ifdef _WIN32
+        std::lock_guard lock(request_mutex_);
+        if (!loaded_ || !process_running())
+            return CortexReply{false,{},"persistent llama server is not running"};
+        try {
+            const bool manual_chatml = chat_template_ == "chatml";
+            const std::string prompt_text = manual_chatml ? build_chatml_prompt(context,user_text)
+                                                           : build_cortex_prompt(context,user_text);
+            std::ostringstream json;
+            json << "{\"prompt\":\"" << json_escape(prompt_text) << "\""
+                 << ",\"n_predict\":" << max_new_tokens
+                 << ",\"temperature\":" << std::fixed << std::setprecision(2) << temperature
+                 << ",\"top_k\":40,\"top_p\":0.90,\"min_p\":0.05"
+                 << ",\"repeat_penalty\":1.08,\"cache_prompt\":true,\"stream\":false"
+                 << ",\"stop\":[\"<|im_end|>\"]}";
+            for (int attempt = 0; attempt < 2; ++attempt) {
+                const HttpResult response = http_request(port_, L"POST", L"/completion", json.str());
+                if (!response.transport_ok)
+                    return CortexReply{false,{},"persistent llama-server request failed: " + response.error};
+                if (response.status != 200)
+                    return CortexReply{false,{},"persistent llama-server HTTP " + std::to_string(response.status) + ": " + response.body};
+                const auto content = json_string_field(response.body, "content");
+                if (!content)
+                    return CortexReply{false,{},"persistent llama-server returned malformed completion JSON"};
+                std::string output = clean_cortex_output(*content);
+                if (!output.empty()) return CortexReply{true,std::move(output),{}};
+            }
+            return CortexReply{false,{},"persistent llama-server emitted no text after retry"};
+        } catch (const std::exception& ex) {
+            return CortexReply{false,{},ex.what()};
+        }
+#else
+        (void)context; (void)user_text; (void)max_new_tokens; (void)temperature;
+        return CortexReply{false,{},"PersistentLlamaBackend is unavailable on this platform"};
+#endif
+    }
+
+private:
+#ifdef _WIN32
+    bool process_running() const noexcept {
+        if (process_.hProcess == nullptr) return false;
+        DWORD exit_code = 0;
+        return GetExitCodeProcess(process_.hProcess, &exit_code) && exit_code == STILL_ACTIVE;
+    }
+
+    void stop_server() noexcept {
+        if (process_.hProcess != nullptr) {
+            if (process_running()) {
+                (void)TerminateProcess(process_.hProcess, 0);
+                (void)WaitForSingleObject(process_.hProcess, 5000);
+            }
+            CloseHandle(process_.hProcess);
+            process_.hProcess = nullptr;
+        }
+        if (process_.hThread != nullptr) {
+            CloseHandle(process_.hThread);
+            process_.hThread = nullptr;
+        }
+        port_ = 0;
+    }
+
+    bool launch_server(std::string* error) {
+        const DWORD pid = GetCurrentProcessId();
+        const auto tick = static_cast<unsigned long long>(GetTickCount64());
+        const unsigned seed = static_cast<unsigned>((static_cast<unsigned long long>(pid) * 131ULL + tick) % 15000ULL);
+        port_ = static_cast<INTERNET_PORT>(50000U + seed);
+
+        std::ostringstream command;
+        command << quote_shell(runtime_path_) << " -m " << quote_shell(model_path_)
+                << " -c 4096 --host 127.0.0.1 --port " << port_ << " --log-disable";
+        std::vector<char> command_line(command.str().begin(), command.str().end());
+        command_line.push_back('\0');
+
+        SECURITY_ATTRIBUTES security{};
+        security.nLength = sizeof(security);
+        security.bInheritHandle = TRUE;
+        HANDLE null_handle = CreateFileA("NUL", GENERIC_READ | GENERIC_WRITE,
+                                         FILE_SHARE_READ | FILE_SHARE_WRITE, &security,
+                                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (null_handle == INVALID_HANDLE_VALUE) {
+            if (error) *error = "failed to open NUL for persistent cortex logging";
+            return false;
+        }
+        STARTUPINFOA startup{};
+        startup.cb = sizeof(startup);
+        startup.dwFlags = STARTF_USESTDHANDLES;
+        startup.hStdInput = null_handle;
+        startup.hStdOutput = null_handle;
+        startup.hStdError = null_handle;
+        PROCESS_INFORMATION created{};
+        const BOOL ok = CreateProcessA(nullptr, command_line.data(), nullptr, nullptr, TRUE,
+                                       CREATE_NO_WINDOW, nullptr, nullptr, &startup, &created);
+        CloseHandle(null_handle);
+        if (!ok) {
+            if (error) *error = "failed to launch persistent llama-server (Win32 error " + std::to_string(GetLastError()) + ")";
+            return false;
+        }
+        process_ = created;
+
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(120);
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (!process_running()) {
+                DWORD exit_code = 1;
+                (void)GetExitCodeProcess(process_.hProcess, &exit_code);
+                if (error) *error = "persistent llama-server exited during model load with code " + std::to_string(exit_code);
+                stop_server();
+                return false;
+            }
+            const HttpResult health = http_request(port_, L"GET", L"/health");
+            if (health.transport_ok && health.status == 200) {
+                loaded_ = true;
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(150));
+        }
+        if (error) *error = "persistent llama-server did not become ready within 120 seconds";
+        stop_server();
+        return false;
+    }
+
+    PROCESS_INFORMATION process_{};
+    INTERNET_PORT port_ = 0;
+#endif
+    std::string model_path_;
+    std::string runtime_path_;
+    std::string chat_template_;
+    bool loaded_ = false;
+    mutable std::mutex request_mutex_;
+};
 
 bool ToolBus::register_tool(ToolDefinition definition, Handler handler) {
     if (definition.qualified_name.empty() || !handler) return false;
@@ -303,51 +735,79 @@ ToolResult EngineBridge::request(const ToolIntent& intent, unsigned timeout_ms) 
 bool LocalCortex::configure_gguf(std::string model_path, std::string runtime_path, std::string* error) noexcept {
     try {
         if (model_path.empty()) throw std::runtime_error("GGUF model path is empty");
-        if (lower(std::filesystem::path(model_path).extension().string()) != ".gguf") throw std::runtime_error("L27D local cortex expects a .gguf instruct model");
-        if (!std::filesystem::exists(model_path)) throw std::runtime_error("GGUF model file does not exist: " + model_path);
         if (runtime_path.empty()) runtime_path = env_or_empty("SPIRAL_LLAMA_EXE");
         if (runtime_path.empty()) runtime_path = "llama-cli.exe";
-        model_path_ = std::move(model_path);
-        runtime_path_ = std::move(runtime_path);
-        chat_template_ = detect_template(model_path_);
+
+        std::string policy = lower(env_or_empty("SPIRAL_CORTEX_BACKEND"));
+        if (policy.empty()) policy = "auto";
+        if (policy != "auto" && policy != "persistent" && policy != "legacy")
+            throw std::runtime_error("SPIRAL_CORTEX_BACKEND must be auto, persistent, or legacy");
+
+        std::filesystem::path requested(runtime_path);
+        const std::string requested_name = lower(requested.filename().string());
+        const bool requested_server = requested_name.find("llama-server") != std::string::npos;
+#ifdef _WIN32
+        const char* server_name = "llama-server.exe";
+        const char* cli_name = "llama-cli.exe";
+#else
+        const char* server_name = "llama-server";
+        const char* cli_name = "llama-cli";
+#endif
+        std::filesystem::path cli_runtime = requested_server ? requested.parent_path() / cli_name : requested;
+        std::filesystem::path server_runtime;
+        const std::string server_override = env_or_empty("SPIRAL_LLAMA_SERVER_EXE");
+        if (!server_override.empty()) server_runtime = server_override;
+        else server_runtime = requested_server ? requested : requested.parent_path() / server_name;
+
+        if (policy != "legacy") {
+            if (std::filesystem::exists(server_runtime)) {
+                auto persistent = std::make_unique<PersistentLlamaBackend>();
+                std::string persistent_error;
+                if (persistent->configure(model_path, server_runtime.string(), &persistent_error)) {
+                    backend_ = std::move(persistent);
+                    if (error) error->clear();
+                    return true;
+                }
+                if (policy == "persistent") throw std::runtime_error(persistent_error);
+            } else if (policy == "persistent") {
+                throw std::runtime_error("persistent llama server not found: " + server_runtime.string());
+            }
+        }
+
+        auto legacy = std::make_unique<LegacyCliBackend>();
+        std::string legacy_error;
+        if (!legacy->configure(std::move(model_path), cli_runtime.string(), &legacy_error))
+            throw std::runtime_error(legacy_error);
+        backend_ = std::move(legacy);
         if (error) error->clear();
         return true;
-    } catch (const std::exception& ex) { if (error) *error = ex.what(); return false; }
-    catch (...) { if (error) *error = "unknown XENON GGUF configuration failure"; return false; }
+    } catch (const std::exception& ex) {
+        backend_.reset();
+        if (error) *error = ex.what();
+        return false;
+    } catch (...) {
+        backend_.reset();
+        if (error) *error = "unknown XENON GGUF configuration failure";
+        return false;
+    }
 }
 
-void LocalCortex::unload() noexcept { model_path_.clear(); runtime_path_.clear(); chat_template_.clear(); }
-bool LocalCortex::loaded() const noexcept { return !model_path_.empty(); }
-CortexState LocalCortex::state() const noexcept { return loaded() ? CortexState::Ready : CortexState::Offline; }
-const std::string& LocalCortex::model_path() const noexcept { return model_path_; }
-const std::string& LocalCortex::runtime_path() const noexcept { return runtime_path_; }
-const std::string& LocalCortex::chat_template() const noexcept { return chat_template_; }
+void LocalCortex::unload() noexcept {
+    if (backend_) backend_->unload();
+    backend_.reset();
+}
 
-CortexReply LocalCortex::generate(const SpiralContext& context, std::string_view user_text, std::size_t max_new_tokens, float temperature) const {
-    if (!loaded()) return CortexReply{false,{},"XENON local cortex has no GGUF model configured"};
-    const auto temp = prompt_path();
-    try {
-        const bool manual_chatml = chat_template_ == "chatml";
-        const std::string prompt_text = manual_chatml ? build_chatml_prompt(context,user_text) : build_cortex_prompt(context,user_text);
-        { std::ofstream out(temp,std::ios::binary|std::ios::trunc); if(!out) throw std::runtime_error("failed to create local cortex prompt file"); out << prompt_text; }
-        std::ostringstream command;
-        command << quote_shell(runtime_path_) << " -m " << quote_shell(model_path_) << " -f " << quote_shell(temp.string())
-                << " -n " << max_new_tokens << " --temp " << std::fixed << std::setprecision(2) << temperature
-                << " -c 4096 -st --simple-io --top-k 40 --top-p 0.90 --min-p 0.05 --repeat-penalty 1.08 --no-display-prompt";
-        if (!manual_chatml && !chat_template_.empty() && chat_template_ != "auto") command << " --chat-template " << quote_shell(chat_template_);
-#ifndef _WIN32
-        command << " 2>&1";
-#endif
-        for (int attempt = 0; attempt < 2; ++attempt) {
-            int exit_code=0;
-            std::string output=read_process(command.str(),exit_code);
-            if(exit_code!=0) { std::error_code ignored; std::filesystem::remove(temp,ignored); return CortexReply{false,{},"local llama.cpp runtime failed: " + clean_cortex_output(output)}; }
-            output=clean_cortex_output(std::move(output));
-            if(!output.empty()) { std::error_code ignored; std::filesystem::remove(temp,ignored); return CortexReply{true,std::move(output),{}}; }
-        }
-        { std::error_code ignored; std::filesystem::remove(temp,ignored); }
-        return CortexReply{false,{},"local llama.cpp runtime emitted no text after retry"};
-    } catch(const std::exception& ex){ std::error_code ignored; std::filesystem::remove(temp,ignored); return CortexReply{false,{},ex.what()}; }
+bool LocalCortex::loaded() const noexcept { return backend_ && backend_->loaded(); }
+CortexState LocalCortex::state() const noexcept { return backend_ ? backend_->state() : CortexState::Offline; }
+std::string_view LocalCortex::backend_name() const noexcept { return backend_ ? backend_->name() : std::string_view{"offline"}; }
+const std::string& LocalCortex::model_path() const noexcept { return backend_ ? backend_->model_path() : empty_string(); }
+const std::string& LocalCortex::runtime_path() const noexcept { return backend_ ? backend_->runtime_path() : empty_string(); }
+const std::string& LocalCortex::chat_template() const noexcept { return backend_ ? backend_->chat_template() : empty_string(); }
+
+CortexReply LocalCortex::generate(const SpiralContext& context, std::string_view user_text,
+                                  std::size_t max_new_tokens, float temperature) const {
+    if (!backend_) return CortexReply{false,{},"XENON local cortex has no backend configured"};
+    return backend_->generate(context, user_text, max_new_tokens, temperature);
 }
 
 std::string current_local_datetime() {
