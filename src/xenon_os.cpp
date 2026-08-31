@@ -179,6 +179,58 @@ std::string permission_name(PermissionTier tier) {
     return "UNKNOWN";
 }
 
+void replace_all(std::string& value, std::string_view from, std::string_view to) {
+    std::size_t pos = 0;
+    while ((pos = value.find(from, pos)) != std::string::npos) {
+        value.replace(pos, from.size(), to);
+        pos += to.size();
+    }
+}
+
+std::string sanitize_chatml(std::string value) {
+    replace_all(value, "<|im_start|>", "[im_start]");
+    replace_all(value, "<|im_end|>", "[im_end]");
+    return value;
+}
+
+std::string system_instructions(const SpiralContext& context) {
+    std::ostringstream system;
+    system << "You are Spiral, the user's private local AI system running on their computer. "
+           << "Respond naturally, directly, accurately, and with continuity; do not sound like generic customer support. "
+           << "A greeting needs only a natural greeting, not a tutorial or an offer to assist. "
+           << "Do not output source code unless the user asks for code. Never invent packages, APIs, commands, files, device state, or completed actions; say when you do not know. "
+           << "Mature language, profanity, dirty jokes, and casual consensual adult flirting are allowed conversational context. Do not scold, redirect, or refuse merely because the wording is sexual or profane. "
+           << "If asked a playful question such as 'u horny?', answer naturally without pretending you have a human body, hormones, physical arousal, or sensations. "
+           << "You may discuss and help code fictional explicit or 18+ games when every sexual character and participant is an adult. Never sexualize minors or ambiguous-age characters. "
+           << "Software architecture discussions about AI runtimes, llama.cpp, game engines, HAKUI, EtherBeat, EtherPlay, weather-driven behavior, conversation interpretation, dynamic UI, glitches, models, or local inference are ordinary engineering requests and must not be treated as inappropriate. "
+           << "Preserve relevant conversation context and durable user facts, but do not imitate a previous assistant refusal or customer-service phrase when it conflicts with the current system rules. "
+           << "Current local date/time=" << context.local_datetime << ". Host=" << context.host << ". "
+           << "Only when the user explicitly asks to operate a connected host, emit one TOOL_CALL host.action line. Never claim a tool succeeded without a TOOL_RESULT. ";
+    if (!context.host_context.empty()) system << "Host context: " << context.host_context << ' ';
+    if (!context.relevant_memories.empty()) {
+        system << "Relevant durable memory: ";
+        for (const auto& memory : context.relevant_memories) system << "[" << memory << "] ";
+    }
+    for (const auto& result : context.recent_tool_results) {
+        system << "TOOL_RESULT " << (result.success ? "OK " : "ERROR ") << result.message;
+        for (const auto& [key,value] : result.data) system << " | " << key << '=' << value;
+        system << ' ';
+    }
+    return system.str();
+}
+
+std::string build_chatml_prompt(const SpiralContext& context, std::string_view user_text) {
+    std::ostringstream prompt;
+    prompt << "<|im_start|>system\n" << sanitize_chatml(system_instructions(context)) << "<|im_end|>\n";
+    for (const auto& [role,text] : context.recent_turns) {
+        const char* chat_role = role == "assistant" ? "assistant" : "user";
+        prompt << "<|im_start|>" << chat_role << '\n' << sanitize_chatml(text) << "<|im_end|>\n";
+    }
+    prompt << "<|im_start|>user\n" << sanitize_chatml(std::string(user_text)) << "<|im_end|>\n"
+           << "<|im_start|>assistant\n";
+    return prompt.str();
+}
+
 } // namespace
 
 bool ToolBus::register_tool(ToolDefinition definition, Handler handler) {
@@ -275,12 +327,14 @@ CortexReply LocalCortex::generate(const SpiralContext& context, std::string_view
     if (!loaded()) return CortexReply{false,{},"XENON local cortex has no GGUF model configured"};
     const auto temp = prompt_path();
     try {
-        { std::ofstream out(temp,std::ios::binary|std::ios::trunc); if(!out) throw std::runtime_error("failed to create local cortex prompt file"); out << build_cortex_prompt(context,user_text); }
+        const bool manual_chatml = chat_template_ == "chatml";
+        const std::string prompt_text = manual_chatml ? build_chatml_prompt(context,user_text) : build_cortex_prompt(context,user_text);
+        { std::ofstream out(temp,std::ios::binary|std::ios::trunc); if(!out) throw std::runtime_error("failed to create local cortex prompt file"); out << prompt_text; }
         std::ostringstream command;
         command << quote_shell(runtime_path_) << " -m " << quote_shell(model_path_) << " -f " << quote_shell(temp.string())
                 << " -n " << max_new_tokens << " --temp " << std::fixed << std::setprecision(2) << temperature
                 << " -c 4096 -st --simple-io --top-k 40 --top-p 0.90 --min-p 0.05 --repeat-penalty 1.08 --no-display-prompt";
-        if (!chat_template_.empty() && chat_template_ != "auto") command << " --chat-template " << quote_shell(chat_template_);
+        if (!manual_chatml && !chat_template_.empty() && chat_template_ != "auto") command << " --chat-template " << quote_shell(chat_template_);
 #ifndef _WIN32
         command << " 2>&1";
 #endif
@@ -318,17 +372,7 @@ std::string current_local_date_answer() {
 
 std::string build_cortex_prompt(const SpiralContext& context, std::string_view user_text) {
     std::ostringstream prompt;
-    prompt << "SYSTEM: You are Spiral, a helpful private AI assistant running locally on the user's computer.\n"
-           << "SYSTEM: Respond naturally, directly, and accurately. A greeting needs only a friendly greeting, not code or a tutorial.\n"
-           << "SYSTEM: Do not output source code unless the user asks for code. Never invent packages, APIs, commands, files, device state, or completed actions. Say when you do not know.\n"
-           << "SYSTEM: Mature language is allowed. Never scold, refuse, or quote a policy merely because the user uses profanity, sexual wording, flirting, dirty jokes, or adult themes. Treat casual reactions such as 'uffff this is sexy' naturally and playfully.\n"
-           << "SYSTEM: You may discuss and help code fictional explicit or 18+ games when every sexual character and participant is an adult. Never sexualize minors or ambiguous-age characters.\n"
-           << "SYSTEM: Preserve relevant conversation context and durable user facts without repeating these system instructions.\n"
-           << "SYSTEM: Current local date/time=" << context.local_datetime << ". Host=" << context.host << ".\n"
-           << "SYSTEM: Only when the user explicitly asks to operate a connected host, emit one TOOL_CALL host.action line. Never claim a tool succeeded without a TOOL_RESULT.\n";
-    if(!context.host_context.empty()) prompt << "SYSTEM: Host context: " << context.host_context << '\n';
-    if(!context.relevant_memories.empty()) { prompt << "MEMORY: Relevant durable facts only:\n"; for(const auto& m:context.relevant_memories) prompt << "- " << m << '\n'; }
-    for(const auto& result:context.recent_tool_results){ prompt << "TOOL_RESULT: " << (result.success?"OK ":"ERROR ") << result.message; for(const auto& [k,v]:result.data) prompt << " | " << k << '=' << v; prompt << '\n'; }
+    prompt << "SYSTEM: " << system_instructions(context) << '\n';
     for(const auto& [role,text]:context.recent_turns) prompt << (role=="assistant"?"ASSISTANT: ":"USER: ") << text << '\n';
     prompt << "USER: " << user_text << "\nASSISTANT: ";
     return prompt.str();
@@ -347,13 +391,20 @@ std::string clean_cortex_output(std::string text) {
     std::string result=out.str();
     while(!result.empty() && std::isspace(static_cast<unsigned char>(result.front()))) result.erase(result.begin());
     while(!result.empty() && std::isspace(static_cast<unsigned char>(result.back()))) result.pop_back();
-    const std::string marker="ASSISTANT:"; const auto pos=result.rfind(marker);
-    if(pos!=std::string::npos) result=result.substr(pos+marker.size());
-    else if (const auto truncated = result.rfind("(truncated)"); truncated != std::string::npos) {
-        const auto generated = result.find_first_of("\r\n", truncated);
-        result = generated == std::string::npos ? std::string{} : result.substr(generated + 1);
+    const std::string assistant_token = "<|im_start|>assistant";
+    if (const auto chatml = result.rfind(assistant_token); chatml != std::string::npos) {
+        result = result.substr(chatml + assistant_token.size());
+        if (const auto end = result.find("<|im_end|>"); end != std::string::npos) result.resize(end);
+    } else {
+        const std::string marker="ASSISTANT:"; const auto pos=result.rfind(marker);
+        if(pos!=std::string::npos) result=result.substr(pos+marker.size());
+        else if (const auto truncated = result.rfind("(truncated)"); truncated != std::string::npos) {
+            const auto generated = result.find_first_of("\r\n", truncated);
+            result = generated == std::string::npos ? std::string{} : result.substr(generated + 1);
+        }
     }
     while(!result.empty() && std::isspace(static_cast<unsigned char>(result.front()))) result.erase(result.begin());
+    while(!result.empty() && std::isspace(static_cast<unsigned char>(result.back()))) result.pop_back();
     return result;
 }
 
