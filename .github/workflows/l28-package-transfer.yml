@@ -1,0 +1,107 @@
+name: Spiral AI Shell transfer package
+
+on:
+  push:
+    branches: ["spiral/l28-native-inference-foundation"]
+  workflow_dispatch:
+
+jobs:
+  package-windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure x64
+        run: cmake -S . -B build -A x64
+      - name: Build patched shell
+        run: cmake --build build --config Release --target SpiralAIShell spiral_xenon_os_tests spiral_gguf_tests
+      - name: Core tests
+        run: ctest --test-dir build -C Release --output-on-failure -R "spiral_(gguf|xenon_os)_tests"
+      - name: Fetch pinned llama runtime
+        shell: pwsh
+        run: |
+          curl.exe -L --fail --retry 3 "https://github.com/ggml-org/llama.cpp/releases/download/b10621/llama-b10621-bin-win-cpu-x64.zip" -o llama-runtime.zip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Expand-Archive llama-runtime.zip -DestinationPath llama-runtime -Force
+      - name: Fetch Qwen2.5 Coder 1.5B
+        shell: pwsh
+        run: |
+          curl.exe -L --fail --retry 3 "https://huggingface.co/bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf?download=true" -o Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((Get-Item Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf).Length -lt 900000000) { throw 'GGUF download is unexpectedly small' }
+          if ((Get-FileHash Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf -Algorithm SHA256).Hash -ne 'F530705D447660A4336C329981AF164B471B60B974B1D808D57E8EC9FE23B239') { throw 'Qwen Coder GGUF checksum mismatch' }
+      - name: Assemble full runnable folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force product | Out-Null
+          Copy-Item build/Release/SpiralAIShell.exe product/
+          $llama = Get-ChildItem llama-runtime -Filter llama-cli.exe -Recurse | Select-Object -First 1
+          if ($null -eq $llama) { throw 'llama-cli.exe missing from runtime archive' }
+          Copy-Item $llama.FullName product/
+          Get-ChildItem $llama.Directory.FullName -Filter *.dll | Copy-Item -Destination product -Force
+          Copy-Item Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf product/
+          curl.exe -L --fail --retry 3 "https://raw.githubusercontent.com/ggml-org/llama.cpp/v0.3.0/LICENSE" -o product/LLAMA_CPP_LICENSE.txt
+          curl.exe -L --fail --retry 3 "https://www.apache.org/licenses/LICENSE-2.0.txt" -o product/MODEL_LICENSE.txt
+          @'
+          SPIRAL AI SHELL / WINDOWS X64 / L28 PATCHED TRANSFER BUILD
+
+          Double-click SpiralAIShell.exe to run.
+          Bundled: Qwen2.5-Coder-1.5B-Instruct Q4_K_M + pinned llama.cpp CPU runtime.
+
+          This build includes the Spiral identity/project grounding work, stale refusal filtering, benign-prompt recovery, and Qwen role-framing work from the current L28 branch.
+
+          Known CI note: the strict coding-agent smoke assertion on this branch is still being tuned; this transfer package intentionally packages the compiled runnable build after core parser/XENON tests pass so it can be tested interactively.
+          '@ | Set-Content product/README.txt
+      - name: Package full ZIP
+        shell: pwsh
+        run: Compress-Archive -Path product/* -DestinationPath Spiral-AI-Shell-L28-PATCHED-FULL-Windows-x64.zip -Force
+      - name: Split ZIP into transferable chunks
+        shell: pwsh
+        run: |
+          $input = (Resolve-Path Spiral-AI-Shell-L28-PATCHED-FULL-Windows-x64.zip).Path
+          $chunkSize = 300MB
+          $stream = [System.IO.File]::OpenRead($input)
+          try {
+            $buffer = New-Object byte[] (4MB)
+            $part = 1
+            while ($stream.Position -lt $stream.Length) {
+              $partPath = "Spiral-AI-Shell-L28-PATCHED-FULL.part{0:D2}" -f $part
+              $out = [System.IO.File]::Create((Join-Path (Get-Location) $partPath))
+              try {
+                $written = 0L
+                while ($written -lt $chunkSize -and $stream.Position -lt $stream.Length) {
+                  $want = [Math]::Min($buffer.Length, [Math]::Min($chunkSize - $written, $stream.Length - $stream.Position))
+                  $read = $stream.Read($buffer, 0, [int]$want)
+                  if ($read -le 0) { break }
+                  $out.Write($buffer, 0, $read)
+                  $written += $read
+                }
+              } finally { $out.Dispose() }
+              $part++
+            }
+          } finally { $stream.Dispose() }
+          Get-ChildItem Spiral-AI-Shell-L28-PATCHED-FULL.part* | ForEach-Object { Write-Host "$($_.Name) $($_.Length)" }
+      - name: Upload part 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spiral-L28-FULL-part01
+          path: Spiral-AI-Shell-L28-PATCHED-FULL.part01
+          compression-level: 0
+      - name: Upload part 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spiral-L28-FULL-part02
+          path: Spiral-AI-Shell-L28-PATCHED-FULL.part02
+          compression-level: 0
+      - name: Upload part 3
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spiral-L28-FULL-part03
+          path: Spiral-AI-Shell-L28-PATCHED-FULL.part03
+          compression-level: 0
+      - name: Upload part 4 if present
+        if: ${{ hashFiles('Spiral-AI-Shell-L28-PATCHED-FULL.part04') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spiral-L28-FULL-part04
+          path: Spiral-AI-Shell-L28-PATCHED-FULL.part04
+          compression-level: 0
