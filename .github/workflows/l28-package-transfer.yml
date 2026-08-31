@@ -36,8 +36,11 @@ jobs:
           Copy-Item build/Release/SpiralAIShell.exe product/
 
           $llama = Get-ChildItem llama-runtime -Filter llama-cli.exe -Recurse | Select-Object -First 1
+          $server = Get-ChildItem llama-runtime -Filter llama-server.exe -Recurse | Select-Object -First 1
           if ($null -eq $llama) { throw 'llama-cli.exe missing from runtime archive' }
+          if ($null -eq $server) { throw 'llama-server.exe missing from runtime archive' }
           Copy-Item $llama.FullName product/
+          Copy-Item $server.FullName product/
           Get-ChildItem $llama.Directory.FullName -Filter *.dll | Copy-Item -Destination product -Force
 
           # Bundle the actual x64 MSVC dynamic CRT used by the runner. Do not hardcode
@@ -68,20 +71,24 @@ jobs:
           cd /d "%~dp0"
           set "MODEL=%CD%\Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf"
           set "RUNTIME=%CD%\llama-cli.exe"
+          set "SPIRAL_LLAMA_SERVER_EXE=%CD%\llama-server.exe"
+          set "SPIRAL_CORTEX_BACKEND=persistent"
           set "SHELL=%CD%\SpiralAIShell.exe"
-          echo SPIRAL L28 STARTUP
+          echo SPIRAL L28 PERSISTENT CORTEX STARTUP
           echo Folder: %CD%
           echo.
           if not exist "%SHELL%" goto missingexe
           if not exist "%RUNTIME%" goto missingruntime
+          if not exist "%SPIRAL_LLAMA_SERVER_EXE%" goto missingserver
           if not exist "%MODEL%" goto missingmodel
 
-          echo Running startup self-test...
+          echo Loading resident Qwen cortex once...
           "%SHELL%" --model "%MODEL%" --runtime "%RUNTIME%" --prompt "Reply with Spiral startup ready and name XENON." 1>SPIRAL_SELFTEST.log 2>SPIRAL_STARTUP.log
           set ERR=%ERRORLEVEL%
           if not "%ERR%"=="0" goto failed
 
           echo Self-test passed. Opening interactive Spiral shell...
+          echo Subsequent replies use one resident llama-server process for this shell session.
           echo.
           "%SHELL%" --model "%MODEL%" --runtime "%RUNTIME%"
           set ERR=%ERRORLEVEL%
@@ -106,6 +113,10 @@ jobs:
           echo ERROR: llama-cli.exe is missing.
           pause
           exit /b 2
+          :missingserver
+          echo ERROR: llama-server.exe is missing.
+          pause
+          exit /b 2
           :missingmodel
           echo ERROR: Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf is missing.
           pause
@@ -113,17 +124,22 @@ jobs:
           '@ | Set-Content product/START_SPIRAL_DIAGNOSTIC.bat -Encoding ascii
 
           @'
-          SPIRAL AI SHELL / WINDOWS X64 / L28 PATCHED TRANSFER BUILD
+          SPIRAL AI SHELL / WINDOWS X64 / L28 PERSISTENT CORTEX BUILD
 
           RECOMMENDED START:
           Double-click START_SPIRAL_DIAGNOSTIC.bat.
 
-          The launcher first runs a one-shot startup self-test with the pinned Coder
-          model/runtime. If that succeeds it opens the real interactive shell normally.
-          If startup fails, SPIRAL_STARTUP.log and SPIRAL_SELFTEST.log remain beside it.
+          Default backend: persistent llama-server bridge. The model is loaded once when
+          the shell starts and subsequent conversation turns reuse the resident process
+          and its prompt cache instead of launching llama-cli.exe for every message.
+
+          Debug/reference fallback:
+          set SPIRAL_CORTEX_BACKEND=legacy
+          then launch SpiralAIShell.exe normally to use the old per-turn llama-cli path.
 
           This package bundles the MSVC x64 runtime DLLs required by SpiralAIShell.exe,
-          the pinned llama.cpp CPU runtime, and Qwen2.5 Coder 1.5B Q4_K_M.
+          llama-server.exe + llama-cli.exe from pinned llama.cpp b10621, and
+          Qwen2.5 Coder 1.5B Q4_K_M.
           '@ | Set-Content product/START_HERE.txt
       - name: Verify packaged dependencies
         shell: pwsh
@@ -131,6 +147,7 @@ jobs:
           $required = @(
             'SpiralAIShell.exe',
             'llama-cli.exe',
+            'llama-server.exe',
             'Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf',
             'MSVCP140.dll',
             'VCRUNTIME140.dll',
@@ -141,36 +158,65 @@ jobs:
             if (!(Test-Path (Join-Path 'product' $file))) { throw "Packaged dependency missing: $file" }
           }
           Get-ChildItem product | Sort-Object Name | Format-Table Name,Length
-      - name: Real packaged startup smoke
+      - name: Real packaged persistent startup smoke
         shell: pwsh
         run: |
           Push-Location product
           try {
+            $env:SPIRAL_CORTEX_BACKEND = 'persistent'
+            $env:SPIRAL_LLAMA_SERVER_EXE = (Resolve-Path .\llama-server.exe).Path
             $output = & .\SpiralAIShell.exe --model .\Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf --runtime .\llama-cli.exe --prompt "what is the future of spiral ai" 2>&1
             $code = $LASTEXITCODE
             $output | Write-Host
-            if ($code -ne 0) { throw "Packaged SpiralAIShell exited with code $code" }
+            if ($code -ne 0) { throw "Packaged persistent SpiralAIShell exited with code $code" }
             $text = ($output -join "`n")
             if ($text -notmatch '(?i)(XENON|ORGANIC|HAKUI|EtherBeat|EtherPlay|native inference|GGUF)') {
-              throw 'Packaged startup smoke returned ungrounded output'
+              throw 'Packaged persistent startup smoke returned ungrounded output'
             }
           } finally {
+            Remove-Item Env:SPIRAL_CORTEX_BACKEND -ErrorAction SilentlyContinue
+            Remove-Item Env:SPIRAL_LLAMA_SERVER_EXE -ErrorAction SilentlyContinue
+            Pop-Location
+          }
+      - name: Two-turn resident cortex smoke
+        shell: pwsh
+        run: |
+          Push-Location product
+          try {
+            $env:SPIRAL_CORTEX_BACKEND = 'persistent'
+            $env:SPIRAL_LLAMA_SERVER_EXE = (Resolve-Path .\llama-server.exe).Path
+            @('hello', 'how can we become independent from llama', '/exit') | Set-Content PERSISTENT_INPUT.txt -Encoding ascii
+            $output = Get-Content PERSISTENT_INPUT.txt | & .\SpiralAIShell.exe --model .\Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf --runtime .\llama-cli.exe 2>&1
+            $code = $LASTEXITCODE
+            $output | Write-Host
+            if ($code -ne 0) { throw "Two-turn persistent shell exited with code $code" }
+            $text = ($output -join "`n")
+            if (($text | Select-String -Pattern 'Spiral >' -AllMatches).Matches.Count -lt 2) {
+              throw 'Persistent shell did not complete two conversation turns in one process'
+            }
+            if ($text -notmatch '(?i)(native|runtime|llama|GGUF|inference)') {
+              throw 'Second persistent turn did not discuss runtime independence'
+            }
+          } finally {
+            Remove-Item Env:SPIRAL_CORTEX_BACKEND -ErrorAction SilentlyContinue
+            Remove-Item Env:SPIRAL_LLAMA_SERVER_EXE -ErrorAction SilentlyContinue
+            Remove-Item PERSISTENT_INPUT.txt -ErrorAction SilentlyContinue
             Pop-Location
           }
       - name: Package full ZIP
         shell: pwsh
-        run: Compress-Archive -Path product/* -DestinationPath Spiral-AI-Shell-L28-PATCHED-FULL-Windows-x64.zip -Force
+        run: Compress-Archive -Path product/* -DestinationPath Spiral-AI-Shell-L28-PERSISTENT-CORTEX-Windows-x64.zip -Force
       - name: Split ZIP into transferable chunks
         shell: pwsh
         run: |
-          $input = (Resolve-Path Spiral-AI-Shell-L28-PATCHED-FULL-Windows-x64.zip).Path
+          $input = (Resolve-Path Spiral-AI-Shell-L28-PERSISTENT-CORTEX-Windows-x64.zip).Path
           $chunkSize = 300MB
           $stream = [System.IO.File]::OpenRead($input)
           try {
             $buffer = New-Object byte[] (4MB)
             $part = 1
             while ($stream.Position -lt $stream.Length) {
-              $partPath = "Spiral-AI-Shell-L28-PATCHED-FULL.part{0:D2}" -f $part
+              $partPath = "Spiral-AI-Shell-L28-PERSISTENT-CORTEX.part{0:D2}" -f $part
               $out = [System.IO.File]::Create((Join-Path (Get-Location) $partPath))
               try {
                 $written = 0L
@@ -185,29 +231,29 @@ jobs:
               $part++
             }
           } finally { $stream.Dispose() }
-          Get-ChildItem Spiral-AI-Shell-L28-PATCHED-FULL.part* | ForEach-Object { Write-Host "$($_.Name) $($_.Length)" }
+          Get-ChildItem Spiral-AI-Shell-L28-PERSISTENT-CORTEX.part* | ForEach-Object { Write-Host "$($_.Name) $($_.Length)" }
       - name: Upload part 1
         uses: actions/upload-artifact@v4
         with:
-          name: Spiral-L28-FULL-part01
-          path: Spiral-AI-Shell-L28-PATCHED-FULL.part01
+          name: Spiral-L28-PERSISTENT-part01
+          path: Spiral-AI-Shell-L28-PERSISTENT-CORTEX.part01
           compression-level: 0
       - name: Upload part 2
         uses: actions/upload-artifact@v4
         with:
-          name: Spiral-L28-FULL-part02
-          path: Spiral-AI-Shell-L28-PATCHED-FULL.part02
+          name: Spiral-L28-PERSISTENT-part02
+          path: Spiral-AI-Shell-L28-PERSISTENT-CORTEX.part02
           compression-level: 0
       - name: Upload part 3
         uses: actions/upload-artifact@v4
         with:
-          name: Spiral-L28-FULL-part03
-          path: Spiral-AI-Shell-L28-PATCHED-FULL.part03
+          name: Spiral-L28-PERSISTENT-part03
+          path: Spiral-AI-Shell-L28-PERSISTENT-CORTEX.part03
           compression-level: 0
       - name: Upload part 4 if present
-        if: ${{ hashFiles('Spiral-AI-Shell-L28-PATCHED-FULL.part04') != '' }}
+        if: ${{ hashFiles('Spiral-AI-Shell-L28-PERSISTENT-CORTEX.part04') != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: Spiral-L28-FULL-part04
-          path: Spiral-AI-Shell-L28-PATCHED-FULL.part04
+          name: Spiral-L28-PERSISTENT-part04
+          path: Spiral-AI-Shell-L28-PERSISTENT-CORTEX.part04
           compression-level: 0
