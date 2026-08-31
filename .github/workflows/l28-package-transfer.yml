@@ -40,17 +40,22 @@ jobs:
           Copy-Item $llama.FullName product/
           Get-ChildItem $llama.Directory.FullName -Filter *.dll | Copy-Item -Destination product -Force
 
-          # Bundle the MSVC dynamic CRT beside the product so startup works on a
-          # clean Windows machine without relying on a preinstalled VC++ runtime.
+          # Bundle the actual x64 MSVC dynamic CRT used by the runner. Do not hardcode
+          # VC143/VC145 directory names: GitHub's Windows image can move Visual Studio
+          # versions independently of this project.
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           if (!(Test-Path $vswhere)) { throw 'vswhere.exe not found on Windows runner' }
           $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           if ([string]::IsNullOrWhiteSpace($vs)) { throw 'Visual Studio C++ toolchain not found' }
           $redistRoot = Join-Path $vs 'VC\Redist\MSVC'
-          $redistVersion = Get-ChildItem $redistRoot -Directory | Sort-Object Name -Descending | Select-Object -First 1
-          if ($null -eq $redistVersion) { throw 'MSVC redistributable directory not found' }
-          $crtDir = Join-Path $redistVersion.FullName 'x64\Microsoft.VC143.CRT'
-          if (!(Test-Path $crtDir)) { throw "MSVC x64 CRT directory not found: $crtDir" }
+          if (!(Test-Path $redistRoot)) { throw "MSVC redistributable root not found: $redistRoot" }
+          $msvcp = Get-ChildItem $redistRoot -Recurse -File -Filter MSVCP140.dll |
+            Where-Object { $_.FullName -match '[\\/]x64[\\/]' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if ($null -eq $msvcp) { throw "Could not discover x64 MSVCP140.dll under $redistRoot" }
+          $crtDir = $msvcp.Directory.FullName
+          Write-Host "Discovered MSVC CRT: $crtDir"
           Get-ChildItem $crtDir -Filter *.dll | Copy-Item -Destination product -Force
 
           Copy-Item Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf product/
