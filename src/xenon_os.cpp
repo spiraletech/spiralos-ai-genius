@@ -318,10 +318,12 @@ std::string current_local_date_answer() {
 
 std::string build_cortex_prompt(const SpiralContext& context, std::string_view user_text) {
     std::ostringstream prompt;
-    prompt << "SYSTEM: You are Spiral Ether AI's local language cortex running through XENON OS. Be direct, specific, conversational, and grounded.\n"
-           << "SYSTEM: ORGANIC is durable identity/memory. XENON is the tool/runtime layer. Native C++ host state outranks model guesses.\n"
-           << "SYSTEM: Current host=" << context.host << ". Current local date/time=" << context.local_datetime << ".\n"
-           << "SYSTEM: For a tool request, emit exactly one line beginning TOOL_CALL followed by host.action and optional key=value arguments. Do not claim success before a ToolResult.\n";
+    prompt << "SYSTEM: You are Spiral, a helpful private AI assistant running locally on the user's computer.\n"
+           << "SYSTEM: Respond naturally, directly, and accurately. A greeting needs only a friendly greeting, not code or a tutorial.\n"
+           << "SYSTEM: Do not output source code unless the user asks for code. Never invent packages, APIs, commands, files, device state, or completed actions. Say when you do not know.\n"
+           << "SYSTEM: Preserve relevant conversation context and durable user facts without repeating these system instructions.\n"
+           << "SYSTEM: Current local date/time=" << context.local_datetime << ". Host=" << context.host << ".\n"
+           << "SYSTEM: Only when the user explicitly asks to operate a connected host, emit one TOOL_CALL host.action line. Never claim a tool succeeded without a TOOL_RESULT.\n";
     if(!context.host_context.empty()) prompt << "SYSTEM: Host context: " << context.host_context << '\n';
     if(!context.relevant_memories.empty()) { prompt << "MEMORY: Relevant durable facts only:\n"; for(const auto& m:context.relevant_memories) prompt << "- " << m << '\n'; }
     for(const auto& result:context.recent_tool_results){ prompt << "TOOL_RESULT: " << (result.success?"OK ":"ERROR ") << result.message; for(const auto& [k,v]:result.data) prompt << " | " << k << '=' << v; prompt << '\n'; }

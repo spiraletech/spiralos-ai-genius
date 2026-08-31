@@ -43,6 +43,8 @@ std::filesystem::path executable_directory() {
 }
 
 std::optional<std::filesystem::path> discover_model(const std::filesystem::path& root) {
+    const std::filesystem::path qwen = root / "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf";
+    if (std::filesystem::exists(qwen)) return qwen;
     const std::filesystem::path preferred = root / "SmolLM2-135M-Instruct-Q4_K_M.gguf";
     if (std::filesystem::exists(preferred)) return preferred;
     const std::filesystem::path generic = root / "SpiralCortex.gguf";

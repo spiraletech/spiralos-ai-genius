@@ -46,6 +46,8 @@ int main() {
     assert(prompt.find("ORGANIC") != std::string::npos);
     assert(prompt.find("TOOL_RESULT:") != std::string::npos);
     assert(prompt.find("TOOL_CALL") != std::string::npos);
+    assert(prompt.find("A greeting needs only a friendly greeting") != std::string::npos);
+    assert(prompt.find("Never invent packages") != std::string::npos);
 
     const auto call = parse_tool_call("TOOL_CALL etherplay.analyze_audio track=test.wav mode=full");
     assert(call.has_value());

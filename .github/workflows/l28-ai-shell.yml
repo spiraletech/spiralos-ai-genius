@@ -16,18 +16,25 @@ jobs:
         run: cmake --build build --config Release --target SpiralAIShell spiral_xenon_os_tests spiral_gguf_tests
       - name: Parser and XENON tests
         run: ctest --test-dir build -C Release --output-on-failure -R "spiral_(gguf|xenon_os)_tests"
+      - name: Upload standalone shell binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spiral-AI-Shell-binary-windows-x64
+          path: build/Release/SpiralAIShell.exe
+          if-no-files-found: error
       - name: Fetch pinned local inference runtime
         shell: pwsh
         run: |
           curl.exe -L --fail --retry 3 "https://github.com/ggml-org/llama.cpp/releases/download/b10621/llama-b10621-bin-win-cpu-x64.zip" -o llama-runtime.zip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Expand-Archive llama-runtime.zip -DestinationPath llama-runtime -Force
-      - name: Fetch bundled SmolLM2 model
+      - name: Fetch bundled Qwen2.5 1.5B model
         shell: pwsh
         run: |
-          curl.exe -L --fail --retry 3 "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf?download=true" -o SmolLM2-135M-Instruct-Q4_K_M.gguf
+          curl.exe -L --fail --retry 3 "https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf?download=true" -o Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if ((Get-Item SmolLM2-135M-Instruct-Q4_K_M.gguf).Length -lt 90000000) { throw 'GGUF download is unexpectedly small' }
+          if ((Get-Item Qwen2.5-1.5B-Instruct-Q4_K_M.gguf).Length -lt 900000000) { throw 'GGUF download is unexpectedly small' }
+          if ((Get-FileHash Qwen2.5-1.5B-Instruct-Q4_K_M.gguf -Algorithm SHA256).Hash -ne '1ADF0B11065D8AD2E8123EA110D1EC956DAB4AB038EAB665614ADBA04B6C3370') { throw 'Qwen GGUF checksum mismatch' }
       - name: Assemble self-contained shell
         shell: pwsh
         run: |
@@ -37,14 +44,14 @@ jobs:
           if ($null -eq $llama) { throw 'llama-cli.exe missing from runtime archive' }
           Copy-Item $llama.FullName product/
           Get-ChildItem $llama.Directory.FullName -Filter *.dll | Copy-Item -Destination product -Force
-          Copy-Item SmolLM2-135M-Instruct-Q4_K_M.gguf product/
+          Copy-Item Qwen2.5-1.5B-Instruct-Q4_K_M.gguf product/
           curl.exe -L --fail --retry 3 "https://raw.githubusercontent.com/ggml-org/llama.cpp/v0.3.0/LICENSE" -o product/LLAMA_CPP_LICENSE.txt
           curl.exe -L --fail --retry 3 "https://www.apache.org/licenses/LICENSE-2.0.txt" -o product/MODEL_LICENSE.txt
           @'
           SPIRAL AI SHELL / WINDOWS X64
 
           Double-click SpiralAIShell.exe and type normally to chat.
-          The SmolLM2 local model and CPU runtime are included; no API key or installation is required.
+          The Qwen2.5 1.5B Instruct local model and CPU runtime are included; no API key or installation is required.
 
           Commands: /help /status /inspect /load /temperature /max /system /history /save /clear /memory /tools /exit
 
@@ -54,14 +61,15 @@ jobs:
         shell: pwsh
         run: |
           $shell = (Resolve-Path product/SpiralAIShell.exe).Path
-          $model = (Resolve-Path product/SmolLM2-135M-Instruct-Q4_K_M.gguf).Path
+          $model = (Resolve-Path product/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf).Path
           $llama = (Resolve-Path product/llama-cli.exe).Path
-          $output = & $shell --model $model --runtime $llama --prompt "Introduce yourself in one short sentence." 2>&1 | Out-String
+          $output = & $shell --model $model --runtime $llama --prompt "Reply to the greeting hello in one short friendly sentence. Do not provide code." 2>&1 | Out-String
           Write-Host $output
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ([string]::IsNullOrWhiteSpace($output)) { throw 'conversation produced no output' }
           if ($output.Contains('LANGUAGE CORTEX ERROR')) { throw 'conversation returned a cortex error' }
           if ($output.Contains('available commands:') -or $output.Contains('Loading model...') -or $output.Contains('[ Prompt:')) { throw 'runtime noise leaked into the assistant reply' }
+          if ($output.Contains('```') -or $output.Contains('pip install') -or $output.Contains('import sys')) { throw 'greeting hallucinated code or package installation' }
           $output | Set-Content product/SMOKE_TEST.txt
           Remove-Item product/SpiralAIShell.organic,product/SpiralAIShell.organic.memory -Force -ErrorAction SilentlyContinue
       - name: Package
