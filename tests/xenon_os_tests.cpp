@@ -58,6 +58,9 @@ int main() {
     const std::string single_turn = clean_cortex_output(
         "build : test\n> USER: hello\nASSISTANT:\nUsable shell answer.\n\n[ Prompt: 500 t/s | Generation: 100 t/s ]\nExiting...\n");
     assert(single_turn == "Usable shell answer.");
+    const std::string truncated_prompt = clean_cortex_output(
+        "build : test\n> SYSTEM: long prompt ... (truncated)\nClean generated answer.\n[ Prompt: 500 t/s ]\n");
+    assert(truncated_prompt == "Clean generated answer.");
 
     const std::string date = current_local_date_answer();
     assert(date.rfind("Today is ",0) == 0);

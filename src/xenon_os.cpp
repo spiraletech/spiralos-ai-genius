@@ -284,13 +284,15 @@ CortexReply LocalCortex::generate(const SpiralContext& context, std::string_view
 #ifndef _WIN32
         command << " 2>&1";
 #endif
-        int exit_code=0;
-        std::string output=read_process(command.str(),exit_code);
-        std::error_code ignored; std::filesystem::remove(temp,ignored);
-        if(exit_code!=0) return CortexReply{false,{},"local llama.cpp runtime failed: " + clean_cortex_output(output)};
-        output=clean_cortex_output(std::move(output));
-        if(output.empty()) return CortexReply{false,{},"local llama.cpp runtime emitted no text"};
-        return CortexReply{true,std::move(output),{}};
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            int exit_code=0;
+            std::string output=read_process(command.str(),exit_code);
+            if(exit_code!=0) { std::error_code ignored; std::filesystem::remove(temp,ignored); return CortexReply{false,{},"local llama.cpp runtime failed: " + clean_cortex_output(output)}; }
+            output=clean_cortex_output(std::move(output));
+            if(!output.empty()) { std::error_code ignored; std::filesystem::remove(temp,ignored); return CortexReply{true,std::move(output),{}}; }
+        }
+        { std::error_code ignored; std::filesystem::remove(temp,ignored); }
+        return CortexReply{false,{},"local llama.cpp runtime emitted no text after retry"};
     } catch(const std::exception& ex){ std::error_code ignored; std::filesystem::remove(temp,ignored); return CortexReply{false,{},ex.what()}; }
 }
 
@@ -341,7 +343,12 @@ std::string clean_cortex_output(std::string text) {
     std::string result=out.str();
     while(!result.empty() && std::isspace(static_cast<unsigned char>(result.front()))) result.erase(result.begin());
     while(!result.empty() && std::isspace(static_cast<unsigned char>(result.back()))) result.pop_back();
-    const std::string marker="ASSISTANT:"; const auto pos=result.rfind(marker); if(pos!=std::string::npos) result=result.substr(pos+marker.size());
+    const std::string marker="ASSISTANT:"; const auto pos=result.rfind(marker);
+    if(pos!=std::string::npos) result=result.substr(pos+marker.size());
+    else if (const auto truncated = result.rfind("(truncated)"); truncated != std::string::npos) {
+        const auto generated = result.find_first_of("\r\n", truncated);
+        result = generated == std::string::npos ? std::string{} : result.substr(generated + 1);
+    }
     while(!result.empty() && std::isspace(static_cast<unsigned char>(result.front()))) result.erase(result.begin());
     return result;
 }

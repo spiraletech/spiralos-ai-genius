@@ -61,7 +61,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ([string]::IsNullOrWhiteSpace($output)) { throw 'conversation produced no output' }
           if ($output.Contains('LANGUAGE CORTEX ERROR')) { throw 'conversation returned a cortex error' }
+          if ($output.Contains('available commands:') -or $output.Contains('Loading model...') -or $output.Contains('[ Prompt:')) { throw 'runtime noise leaked into the assistant reply' }
           $output | Set-Content product/SMOKE_TEST.txt
+          Remove-Item product/SpiralAIShell.organic,product/SpiralAIShell.organic.memory -Force -ErrorAction SilentlyContinue
       - name: Package
         shell: pwsh
         run: Compress-Archive -Path product/* -DestinationPath Spiral-AI-Shell-Windows-x64.zip -Force
