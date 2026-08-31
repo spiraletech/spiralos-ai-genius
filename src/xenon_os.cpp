@@ -605,7 +605,8 @@ private:
         std::ostringstream command;
         command << quote_shell(runtime_path_) << " -m " << quote_shell(model_path_)
                 << " -c 4096 --host 127.0.0.1 --port " << port_ << " --log-disable";
-        std::vector<char> command_line(command.str().begin(), command.str().end());
+        const std::string command_text = command.str();
+        std::vector<char> command_line(command_text.begin(), command_text.end());
         command_line.push_back('\0');
 
         SECURITY_ATTRIBUTES security{};
