@@ -136,7 +136,7 @@ std::string Runtime::send(std::string_view text) {
 
     if (selected_backend == genius::GptBackend::SpiralLocal && local_cortex_.loaded()) {
         (void)shell_.organic_mind_mutable().respond(visible, context_for(host_));
-        const auto first = local_cortex_.generate(xenon_context_locked(visible), visible);
+        const auto first = local_cortex_.generate(xenon_context_locked(visible), visible, local_max_new_tokens_, local_temperature_);
         if (!first.ok) {
             reply = "LANGUAGE CORTEX ERROR: " + first.error;
         } else {
@@ -146,7 +146,7 @@ std::string Runtime::send(std::string_view text) {
                 auto tool_result = tool_bus_.dispatch(*intent,allow_mutation);
                 recent_tool_results_.push_back(tool_result);
                 if (recent_tool_results_.size() > 8) recent_tool_results_.erase(recent_tool_results_.begin());
-                const auto second = local_cortex_.generate(xenon_context_locked(visible), visible);
+                const auto second = local_cortex_.generate(xenon_context_locked(visible), visible, local_max_new_tokens_, local_temperature_);
                 reply = second.ok ? second.text : ("TOOL RESULT RECEIVED, BUT SECOND CORTEX PASS FAILED: " + second.error);
             }
         }
@@ -202,6 +202,12 @@ void Runtime::set_host(HostDescriptor host) { std::lock_guard lock(mutex_); host
 HostDescriptor Runtime::host() const { std::lock_guard lock(mutex_); return host_; }
 void Runtime::set_backend(genius::GptBackend backend) { std::lock_guard lock(mutex_); shell_.set_gpt_backend(backend); }
 genius::GptBackend Runtime::backend() const { std::lock_guard lock(mutex_); return shell_.gpt_backend(); }
+
+void Runtime::configure_local_generation(std::size_t max_new_tokens, float temperature) noexcept {
+    try { std::lock_guard lock(mutex_); local_max_new_tokens_ = max_new_tokens; local_temperature_ = temperature; } catch (...) {}
+}
+std::size_t Runtime::local_max_new_tokens() const noexcept { try { std::lock_guard lock(mutex_); return local_max_new_tokens_; } catch (...) { return 384; } }
+float Runtime::local_temperature() const noexcept { try { std::lock_guard lock(mutex_); return local_temperature_; } catch (...) { return 0.62F; } }
 
 bool Runtime::load_local_model(const std::string& path, std::string* error) noexcept {
     try {

@@ -58,6 +58,10 @@ public:
     void set_backend(genius::GptBackend backend);
     [[nodiscard]] genius::GptBackend backend() const;
 
+    void configure_local_generation(std::size_t max_new_tokens, float temperature) noexcept;
+    [[nodiscard]] std::size_t local_max_new_tokens() const noexcept;
+    [[nodiscard]] float local_temperature() const noexcept;
+
     [[nodiscard]] bool load_local_model(const std::string& path, std::string* error = nullptr) noexcept;
     void unload_local_model() noexcept;
 
@@ -78,6 +82,8 @@ private:
     xenon::ToolBus tool_bus_;
     std::vector<xenon::ToolResult> recent_tool_results_;
     std::vector<Message> visible_history_;
+    std::size_t local_max_new_tokens_ = 384;
+    float local_temperature_ = 0.62F;
 };
 
 [[nodiscard]] std::string host_kind_name(HostKind kind);

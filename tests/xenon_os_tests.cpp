@@ -55,6 +55,9 @@ int main() {
 
     const std::string cleaned = clean_cortex_output("llama_model_loader: noise\nmain: noise\nASSISTANT: Specific useful answer.\n");
     assert(cleaned == "Specific useful answer.");
+    const std::string single_turn = clean_cortex_output(
+        "build : test\n> USER: hello\nASSISTANT:\nUsable shell answer.\n\n[ Prompt: 500 t/s | Generation: 100 t/s ]\nExiting...\n");
+    assert(single_turn == "Usable shell answer.");
 
     const std::string date = current_local_date_answer();
     assert(date.rfind("Today is ",0) == 0);

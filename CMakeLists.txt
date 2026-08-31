@@ -78,6 +78,9 @@ target_link_libraries(spiral_benchmark PRIVATE spiral_core)
 add_executable(SpiralGGUFInspect apps/gguf_inspect/main.cpp)
 target_link_libraries(SpiralGGUFInspect PRIVATE spiral_core)
 
+add_executable(SpiralAIShell apps/ai_shell/main.cpp)
+target_link_libraries(SpiralAIShell PRIVATE spiral_core)
+
 if(WIN32)
     add_executable(spiral_ether_ai WIN32
         apps/ether_ai/main.cpp

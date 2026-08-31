@@ -120,6 +120,7 @@ std::string detect_template(const std::string& model_path) {
     if (!forced.empty()) return forced;
     const std::string name = lower(std::filesystem::path(model_path).filename().string());
     if (name.find("qwen") != std::string::npos) return "chatml";
+    if (name.find("smollm") != std::string::npos) return "chatml";
     if (name.find("llama-3") != std::string::npos || name.find("llama3") != std::string::npos) return "llama3";
     if (name.find("gemma") != std::string::npos) return "gemma";
     if (name.find("mistral") != std::string::npos) return "mistral-v7";
@@ -236,7 +237,7 @@ CortexReply LocalCortex::generate(const SpiralContext& context, std::string_view
         std::ostringstream command;
         command << quote_shell(runtime_path_) << " -m " << quote_shell(model_path_) << " -f " << quote_shell(temp.string())
                 << " -n " << max_new_tokens << " --temp " << std::fixed << std::setprecision(2) << temperature
-                << " --top-k 40 --top-p 0.90 --min-p 0.05 --repeat-penalty 1.08 --no-display-prompt";
+                << " -c 4096 -st --simple-io --top-k 40 --top-p 0.90 --min-p 0.05 --repeat-penalty 1.08 --no-display-prompt";
         if (!chat_template_.empty() && chat_template_ != "auto") command << " --chat-template " << quote_shell(chat_template_);
         command << " 2>&1";
         int exit_code=0;
@@ -284,6 +285,9 @@ std::string build_cortex_prompt(const SpiralContext& context, std::string_view u
 }
 
 std::string clean_cortex_output(std::string text) {
+    const std::string performance_marker = "[ Prompt:";
+    if (const auto performance = text.find(performance_marker); performance != std::string::npos) text.resize(performance);
+    if (const auto exiting = text.find("\nExiting..."); exiting != std::string::npos) text.resize(exiting);
     std::istringstream in(text); std::ostringstream out; std::string line; bool first=true;
     while(std::getline(in,line)){
         const std::string l=lower(line);

@@ -1,0 +1,73 @@
+name: Spiral AI Shell Windows package
+
+on:
+  push:
+    branches: ["spiral/l28-native-inference-foundation"]
+  workflow_dispatch:
+
+jobs:
+  windows-x64-shell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure x64
+        run: cmake -S . -B build -A x64
+      - name: Build conversational shell
+        run: cmake --build build --config Release --target SpiralAIShell spiral_xenon_os_tests spiral_gguf_tests
+      - name: Parser and XENON tests
+        run: ctest --test-dir build -C Release --output-on-failure -R "spiral_(gguf|xenon_os)_tests"
+      - name: Fetch pinned local inference runtime
+        shell: pwsh
+        run: |
+          curl.exe -L --fail --retry 3 "https://github.com/ggml-org/llama.cpp/releases/download/b10621/llama-b10621-bin-win-cpu-x64.zip" -o llama-runtime.zip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Expand-Archive llama-runtime.zip -DestinationPath llama-runtime -Force
+      - name: Fetch bundled SmolLM2 model
+        shell: pwsh
+        run: |
+          curl.exe -L --fail --retry 3 "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf?download=true" -o SmolLM2-135M-Instruct-Q4_K_M.gguf
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((Get-Item SmolLM2-135M-Instruct-Q4_K_M.gguf).Length -lt 90000000) { throw 'GGUF download is unexpectedly small' }
+      - name: Assemble self-contained shell
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force product | Out-Null
+          Copy-Item build/Release/SpiralAIShell.exe product/
+          $llama = Get-ChildItem llama-runtime -Filter llama-cli.exe -Recurse | Select-Object -First 1
+          if ($null -eq $llama) { throw 'llama-cli.exe missing from runtime archive' }
+          Copy-Item $llama.FullName product/
+          Get-ChildItem $llama.Directory.FullName -Filter *.dll | Copy-Item -Destination product -Force
+          Copy-Item SmolLM2-135M-Instruct-Q4_K_M.gguf product/
+          curl.exe -L --fail --retry 3 "https://raw.githubusercontent.com/ggml-org/llama.cpp/v0.3.0/LICENSE" -o product/LLAMA_CPP_LICENSE.txt
+          curl.exe -L --fail --retry 3 "https://www.apache.org/licenses/LICENSE-2.0.txt" -o product/MODEL_LICENSE.txt
+          @'
+          SPIRAL AI SHELL / WINDOWS X64
+
+          Double-click SpiralAIShell.exe and type normally to chat.
+          The SmolLM2 local model and CPU runtime are included; no API key or installation is required.
+
+          Commands: /help /status /inspect /load /temperature /max /system /history /save /clear /memory /tools /exit
+
+          This is a native C++ Spiral shell and host. Its temporary language-generation backend is the pinned bundled llama.cpp CPU runtime while Spiral-native inference is built in later L28 milestones.
+          '@ | Set-Content product/README.txt
+      - name: Real conversation smoke test
+        shell: pwsh
+        run: |
+          $shell = (Resolve-Path product/SpiralAIShell.exe).Path
+          $model = (Resolve-Path product/SmolLM2-135M-Instruct-Q4_K_M.gguf).Path
+          $llama = (Resolve-Path product/llama-cli.exe).Path
+          $output = & $shell --model $model --runtime $llama --prompt "Introduce yourself in one short sentence." 2>&1 | Out-String
+          Write-Host $output
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ([string]::IsNullOrWhiteSpace($output)) { throw 'conversation produced no output' }
+          if ($output.Contains('LANGUAGE CORTEX ERROR')) { throw 'conversation returned a cortex error' }
+          $output | Set-Content product/SMOKE_TEST.txt
+      - name: Package
+        shell: pwsh
+        run: Compress-Archive -Path product/* -DestinationPath Spiral-AI-Shell-Windows-x64.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Spiral-AI-Shell-Windows-x64
+          path: Spiral-AI-Shell-Windows-x64.zip
+          compression-level: 0
+          if-no-files-found: error
