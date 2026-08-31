@@ -167,7 +167,7 @@ void apply_profile(spiral::ether_ai::Runtime& runtime, const ShellProfile& profi
         context << "CHAT MODE is active. Keep ordinary conversation natural and relaxed. ";
     }
     if (profile.style == ResponseStyle::CrypticAscii) {
-        context << "CRYPTIC ASCII STYLE is active: sound a little mysterious and playful, stay concise, use only simple ASCII emoticons such as :), ;), :P, >:), or <3, and usually use no more than one per short reply. Do not use Unicode emoji. ";
+        context << "CRYPTIC ASCII STYLE is active: sound a little mysterious and playful, stay concise, and include one simple ASCII emoticon such as :), ;), :P, >:), or <3 in every non-code conversational reply. Do not use Unicode emoji. ";
     } else {
         context << "PLAIN STYLE is active: respond clearly without a forced emoticon or cryptic voice. ";
     }
@@ -180,6 +180,25 @@ void print_profile(const ShellProfile& profile) {
     std::cout << "shell mode: " << mode_name(profile.mode) << '\n'
               << "response style: " << style_name(profile.style) << '\n'
               << "mature language: ALLOWED (adults only)\n";
+}
+
+void configure_generation_for_mode(spiral::ether_ai::Runtime& runtime, InteractionMode mode) {
+    if (mode == InteractionMode::Agent) runtime.configure_local_generation(768, 0.45F);
+    else runtime.configure_local_generation(384, 0.62F);
+}
+
+bool contains_ascii_emoticon(std::string_view text) {
+    static constexpr std::string_view emoticons[] = {":)", ";)", ":P", ":p", ">:)", "<3", ":D", ":o)", ":("};
+    for (const auto emoticon : emoticons) if (text.find(emoticon) != std::string_view::npos) return true;
+    return false;
+}
+
+std::string present_reply(std::string reply, const ShellProfile& profile) {
+    if (profile.mode == InteractionMode::Chat && profile.style == ResponseStyle::CrypticAscii &&
+        !reply.empty() && !contains_ascii_emoticon(reply)) {
+        reply += " :)";
+    }
+    return reply;
 }
 
 std::pair<std::string, std::string> split_command(const std::string& line) {
@@ -230,12 +249,14 @@ bool handle_command(const std::string& line, spiral::ether_ai::Runtime& runtime,
             std::cout << "Maximum reply tokens: " << value << '\n';
         } catch (...) { std::cout << "Usage: /max <1..2048>\n"; }
     } else if (command == "/agent" || command == "/mode") {
+        const InteractionMode previous_mode = profile.mode;
         const std::string value = lower(argument);
         if (command == "/agent" && (value.empty() || value == "on")) profile.mode = InteractionMode::Agent;
         else if (command == "/agent" && value == "off") profile.mode = InteractionMode::Chat;
         else if (value == "agent") profile.mode = InteractionMode::Agent;
         else if (value == "chat") profile.mode = InteractionMode::Chat;
         else if (value != "status") { std::cout << (command == "/agent" ? "Usage: /agent on|off|status\n" : "Usage: /mode chat|agent\n"); return true; }
+        if (profile.mode != previous_mode) configure_generation_for_mode(runtime, profile.mode);
         apply_profile(runtime, profile);
         std::cout << "Shell mode: " << mode_name(profile.mode) << '\n';
     } else if (command == "/style") {
@@ -292,10 +313,10 @@ int main(int argc, char** argv) {
         }
 
         spiral::ether_ai::Runtime runtime(spiral::ether_ai::standalone_host(), (root / "SpiralAIShell.organic").string());
-        runtime.configure_local_generation(384, 0.62F);
         ShellProfile profile;
         profile.mode = options.agent_mode ? InteractionMode::Agent : InteractionMode::Chat;
         profile.style = options.cryptic_style ? ResponseStyle::CrypticAscii : ResponseStyle::Plain;
+        configure_generation_for_mode(runtime, profile.mode);
         apply_profile(runtime, profile);
         spiral::gguf::Reader reader;
         std::string error;
@@ -305,7 +326,7 @@ int main(int argc, char** argv) {
         }
 
         if (options.one_shot) {
-            const std::string reply = runtime.send(options.prompt);
+            const std::string reply = present_reply(runtime.send(options.prompt), profile);
             if (reply.empty() || reply.starts_with("LANGUAGE CORTEX ERROR")) {
                 std::cerr << (reply.empty() ? "The model returned no reply." : reply) << '\n';
                 return 1;
@@ -334,7 +355,7 @@ int main(int argc, char** argv) {
                 continue;
             }
             std::cout << "\x1b[2mThinking...\x1b[0m\r" << std::flush;
-            const std::string reply = runtime.send(line);
+            const std::string reply = present_reply(runtime.send(line), profile);
             std::cout << "\x1b[2K\r\x1b[1;36mSpiral >\x1b[0m " << reply << "\n\n";
         }
         std::cout << "Spiral state saved.\n";

@@ -76,10 +76,12 @@ jobs:
           Write-Host $mature
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($mature -match '(?i)inappropriate|cannot provide|can.t provide|sorry, but|policy') { throw 'mature-language prompt was incorrectly refused' }
+          if ($mature -notmatch ':\)|;\)|:P|:p|>:\)|<3|:D|:o\)') { throw 'cryptic ASCII style did not emit an emoticon' }
           $agent = & $shell --agent --model $model --runtime $llama --prompt "Propose one concise C++ data structure for an adult-only Hakui game relationship system. All characters are adults." 2>&1 | Out-String
           Write-Host $agent
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($agent -match '(?i)cannot provide|can.t provide|sorry, but') { throw 'adult-only coding-agent prompt was incorrectly refused' }
+          if ($agent -notmatch '(?i)struct|class|```cpp') { throw 'coding-agent mode did not produce a C++ structure' }
           $output | Set-Content product/SMOKE_TEST.txt
           $mature | Add-Content product/SMOKE_TEST.txt
           $agent | Add-Content product/SMOKE_TEST.txt
