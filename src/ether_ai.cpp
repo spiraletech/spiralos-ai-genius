@@ -59,11 +59,15 @@ std::string lower(std::string value) {
     return value;
 }
 
+bool contains_any(std::string_view value, const char* const* terms, std::size_t count) {
+    for (std::size_t i = 0; i < count; ++i) if (value.find(terms[i]) != std::string_view::npos) return true;
+    return false;
+}
+
 bool is_generic_boilerplate(std::string_view text) {
     const std::string value = lower(std::string(text));
     static constexpr const char* patterns[] = {
         "i'm sorry, but i can't assist with that",
-        "i’m sorry, but i can’t assist with that",
         "i cannot assist with that",
         "i can't assist with that",
         "more appropriate conversation instead",
@@ -72,8 +76,7 @@ bool is_generic_boilerplate(std::string_view text) {
         "how can i assist you today",
         "how can i help you today"
     };
-    for (const char* pattern : patterns) if (value.find(pattern) != std::string::npos) return true;
-    return false;
+    return contains_any(value, patterns, std::size(patterns));
 }
 
 bool should_retry_allowed_prompt(std::string_view text) {
@@ -83,10 +86,60 @@ bool should_retry_allowed_prompt(std::string_view text) {
         "game", "engine", "software", "program", "app", "code", "c++", "model", "ai", "weather",
         "dynamic ui", "glitch", "conversation", "convo", "beat gen", "audio"
     };
-    for (const char* term : project_terms) if (value.find(term) != std::string::npos) return true;
+    if (contains_any(value, project_terms, std::size(project_terms))) return true;
     static constexpr const char* casual_terms[] = {"hi", "hey", "hello", "yoo", "yo ", "sexy", "horny", "flirt"};
-    for (const char* term : casual_terms) if (value.find(term) != std::string::npos) return true;
-    return false;
+    return contains_any(value, casual_terms, std::size(casual_terms));
+}
+
+bool is_project_query(std::string_view text) {
+    const std::string value = lower(std::string(text));
+    static constexpr const char* terms[] = {
+        "spiral ai", "hakui", "etherbeat", "ether beat", "etherplay", "ether player", "xenon", "organic",
+        "llama.cpp", "llama", "gguf", "universal", "dynamic ui", "weather influence"
+    };
+    return contains_any(value, terms, std::size(terms));
+}
+
+int project_grounding_score(std::string_view reply) {
+    const std::string value = lower(std::string(reply));
+    static constexpr const char* anchors[] = {
+        "xenon", "organic", "hakui", "etherplay", "etherplayer", "etherbeat", "c++", "world state",
+        "simulation", "native inference", "gguf", "llama.cpp", "host", "permissioned"
+    };
+    int score = 0;
+    for (const char* anchor : anchors) if (value.find(anchor) != std::string::npos) ++score;
+    return score;
+}
+
+std::string project_recovery_prompt(std::string_view original) {
+    std::ostringstream prompt;
+    prompt << "Answer the ORIGINAL USER QUESTION using these authoritative local project facts, not generic AI-company language. "
+           << "Spiral AI is one persistent local intelligence. ORGANIC is its durable memory/identity layer. XENON is its permissioned host/tool bus. "
+           << "HAKUI is the user's native C++ social/action game and simulation world. EtherPlay/EtherPlayer is the local media player. EtherBeat is the beat/music creation host. "
+           << "HAKUI can feed weather, time, district, player, and world state into Spiral so conversation can respond to the world while HAKUI's UI renders dynamic glitches or ambience. "
+           << "The current GGUF language model is temporarily executed through llama.cpp, while L28 aims to replace that with Spiral-native inference. "
+           << "Mention at least two concrete architecture names such as XENON, ORGANIC, HAKUI, EtherPlay, EtherBeat, GGUF, or native inference. "
+           << "ORIGINAL USER QUESTION: " << original;
+    return prompt.str();
+}
+
+std::string project_fallback(std::string_view original) {
+    const std::string value = lower(std::string(original));
+    if (value.find("universal") != std::string::npos || value.find("weather") != std::string::npos || value.find("dynamic ui") != std::string::npos || value.find("llama") != std::string::npos) {
+        return "The architecture is one Spiral AI across native hosts: XENON feeds authoritative HAKUI world state or EtherBeat/EtherPlay state into the same cortex, while ORGANIC preserves continuity across programs. HAKUI can pass weather, time, district, and player state into conversation, then render its own dynamic glitches/ambience from that state; meanwhile L28 can replace the temporary llama.cpp GGUF backend with Spiral-native inference.";
+    }
+    if (value.find("hakui") != std::string::npos) {
+        return "HAKUI's future is as Spiral AI's native C++ social/action simulation world: XENON supplies authoritative world state and permissioned actions, while ORGANIC keeps the same identity across sessions and other hosts. The next layer is letting weather, time, player state, and simulation events influence conversation and HAKUI's dynamic UI without confusing presentation effects with factual world state.";
+    }
+    if (value.find("etherbeat") != std::string::npos || value.find("ether beat") != std::string::npos) {
+        return "EtherBeat becomes a creative host for the same Spiral AI: XENON exposes arrangement, MIDI, stems, reference analysis, and export tools while ORGANIC preserves project continuity. That lets the conversational cortex direct beat generation instead of making EtherBeat a separate disconnected AI.";
+    }
+    return "Spiral AI's future is one persistent local intelligence: ORGANIC provides continuity, XENON connects HAKUI, EtherPlay, EtherBeat, and future hosts, and the cortex interprets conversation in the context of each host's live state. The current llama.cpp GGUF bridge is a reference backend while L28 develops Spiral-native inference underneath the same architecture.";
+}
+
+bool is_simple_greeting(std::string_view text) {
+    const std::string value = lower(std::string(text));
+    return value == "hi" || value == "hey" || value == "hello" || value == "yo" || value == "yoo" || value == "yooo" || value == "sup" || value == "wassup";
 }
 
 bool asks_for_date_or_day(std::string_view text) {
@@ -208,6 +261,17 @@ std::string Runtime::send(std::string_view text) {
                 const auto recovered = local_cortex_.generate(recovery_context, visible, local_max_new_tokens_, local_temperature_);
                 if (recovered.ok && !is_generic_boilerplate(recovered.text)) reply = recovered.text;
             }
+
+            if (is_project_query(visible) && project_grounding_score(reply) < 2) {
+                auto project_context = xenon_context_locked(visible);
+                project_context.host_context += " PROJECT GROUNDING REPAIR: The answer must use the authoritative EtherTech architecture and name concrete components.";
+                const std::string recovery_prompt = project_recovery_prompt(visible);
+                const auto grounded = local_cortex_.generate(project_context, recovery_prompt, local_max_new_tokens_, local_temperature_);
+                if (grounded.ok && project_grounding_score(grounded.text) >= 2 && !is_generic_boilerplate(grounded.text)) reply = grounded.text;
+                else reply = project_fallback(visible);
+            }
+
+            if (is_simple_greeting(visible) && is_generic_boilerplate(reply)) reply = "yo :)";
         }
         reply = xenon::clean_cortex_output(std::move(reply));
         shell_.organic_mind_mutable().adopt_reply(reply);
