@@ -81,6 +81,16 @@ target_link_libraries(SpiralGGUFInspect PRIVATE spiral_core)
 add_executable(SpiralAIShell apps/ai_shell/main.cpp)
 target_link_libraries(SpiralAIShell PRIVATE spiral_core)
 
+# HAKUI L9 process boundary. This executable hosts the real
+# spiral::ether_ai::Runtime with HostKind::Hakui and exposes only a loopback,
+# read-context/request-response protocol. HAKUI remains a separate authority
+# and never links the model/runtime implementation into gameplay state.
+add_executable(SpiralHakuiCortex apps/hakui_cortex/main.cpp)
+target_link_libraries(SpiralHakuiCortex PRIVATE spiral_core)
+if(WIN32)
+    target_link_libraries(SpiralHakuiCortex PRIVATE ws2_32)
+endif()
+
 if(WIN32)
     add_executable(spiral_ether_ai WIN32
         apps/ether_ai/main.cpp
