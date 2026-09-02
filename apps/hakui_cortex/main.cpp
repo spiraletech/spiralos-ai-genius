@@ -1,5 +1,6 @@
 #include "spiral/ether_ai.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdlib>
