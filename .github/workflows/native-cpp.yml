@@ -39,6 +39,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path product | Out-Null
           Copy-Item build/Release/spiral_ether_ai.exe product/SpiralEtherAI.exe
+          Copy-Item build/Release/SpiralHakuiCortex.exe product/SpiralHakuiCortex.exe
           Copy-Item START_HERE.txt product/
           Copy-Item README.md product/
           Copy-Item LICENSE product/ -ErrorAction SilentlyContinue
